@@ -41,6 +41,13 @@ pub(crate) fn digest_of(values: &impl Values) -> Digest {
     Digest::sha256(values.to_captured(Mode::Der).as_slice())
 }
 
+/// Sorts `items` and drops duplicates.
+pub(crate) fn sort_dedup<T: Ord>(mut items: Vec<T>) -> Vec<T> {
+    items.sort();
+    items.dedup();
+    items
+}
+
 /// Sorts `items` by `key` (stable) and drops later items with an equal key.
 pub(crate) fn sort_dedup_by_key<T, K: Ord>(mut items: Vec<T>, key: impl Fn(&T) -> K) -> Vec<T> {
     items.sort_by_key(|item| key(item));

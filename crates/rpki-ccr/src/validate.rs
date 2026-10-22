@@ -80,6 +80,8 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
             "manifest instance hash",
         )?;
         for instance in state.instances() {
+            // `locations` is deliberately not checked: the specification
+            // defines no order or uniqueness for it (see ManifestInstance::new).
             check_sorted(
                 instance.subordinates(),
                 |ski| *ski,

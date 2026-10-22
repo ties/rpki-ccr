@@ -10,7 +10,7 @@ use crate::{AccessDescription, Digest, KeyIdentifier, ManifestNumber};
 use bcder::encode::{self, PrimitiveContent as _, Values};
 
 use crate::Error;
-use crate::encode::{GeneralizedTime, digest_of, sort_dedup_by_key};
+use crate::encode::{GeneralizedTime, digest_of, sort_dedup, sort_dedup_by_key};
 use crate::time::{EPOCH, check_encodable};
 
 /// The set of valid, current manifests in the cache.
@@ -218,8 +218,18 @@ impl ManifestState {
 }
 
 impl ManifestInstance {
-    /// Creates a manifest instance. Subordinates are sorted and deduplicated;
-    /// locations keep the given order.
+    /// Creates a manifest instance. Subordinates are sorted and deduplicated
+    /// as the specification requires. Locations are sorted lexicographically
+    /// (by access method, then URI) and deduplicated.
+    ///
+    /// Multiple `locations` per manifest instance are currently not defined:
+    /// the specification orders every other sequence but says nothing about
+    /// this one, and in practice an RPKI manifest's EE certificate carries
+    /// exactly one SIA access location. A later profile could define a
+    /// semantic order (for example the order of the SIA extension in the
+    /// certificate), so the sort is not a canonical form, just a safe
+    /// default that keeps the encoder output deterministic. Decoded
+    /// instances keep their encoded order so that re-encoding is exact.
     pub fn new(
         hash: Digest,
         size: u64,
@@ -246,7 +256,8 @@ impl ManifestInstance {
             aki,
             manifest_number,
             this_update,
-            locations,
+            // Not specified by the draft; lexicographic is only a safe default.
+            locations: sort_dedup(locations),
             subordinates: sort_dedup_by_key(subordinates, |ski| *ski),
         })
     }

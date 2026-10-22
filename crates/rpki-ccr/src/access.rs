@@ -5,6 +5,8 @@ use bcder::{Ia5String, Oid, Tag};
 use bytes::Bytes;
 
 use crate::oid;
+use std::cmp::Ordering;
+
 use bcder::encode::{self, PrimitiveContent as _, Values};
 
 use crate::Error;
@@ -13,6 +15,12 @@ use crate::Error;
 ///
 /// Only the `uniformResourceIdentifier` form of `GeneralName` is accepted,
 /// as required for RPKI certificates by RFC 6487 section 4.8.
+///
+/// Ordering is lexicographic by the encoded access method OID, then by the
+/// URI octets. The CCR specification defines no order for the `locations`
+/// of a manifest instance; see [`ManifestInstance::new`].
+///
+/// [`ManifestInstance::new`]: crate::ManifestInstance::new
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AccessDescription {
     access_method: Oid<Bytes>,
@@ -49,6 +57,21 @@ impl AccessDescription {
             }
             Ok(AccessDescription { access_method, uri })
         })
+    }
+}
+
+impl PartialOrd for AccessDescription {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AccessDescription {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.access_method
+            .as_ref()
+            .cmp(other.access_method.as_ref())
+            .then_with(|| self.uri.as_bytes().cmp(other.uri.as_bytes()))
     }
 }
 

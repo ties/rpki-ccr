@@ -85,8 +85,12 @@ let ccr = Ccr::builder(produced_at).roa_payloads(vrps).trust_anchors(tas).build(
 let der = ccr.to_der();            // or write_der(&mut file), to_der_gzip()
 ```
 
-Manifest instances keep their `locations` in the given order; everything
-the specification orders is sorted by the constructors.
+Everything the specification orders is sorted by the constructors. The
+`locations` of a manifest instance are the exception: the specification
+defines no order for them (in practice there is exactly one), so
+`ManifestInstance::new` sorts them lexicographically (access method OID,
+then URI) as a safe default for
+deterministic output, while decoded instances keep their encoded order.
 
 ## Example: `ccr-dump`
 

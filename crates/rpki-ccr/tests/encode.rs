@@ -251,8 +251,8 @@ fn multi_location_fixture() {
     assert_eq!(
         uris,
         [
-            "rsync://example.net/ca1/a.mft",
-            "https://example.net/ca1/a.mft"
+            "https://example.net/ca1/a.mft",
+            "rsync://example.net/ca1/a.mft"
         ]
     );
     assert!(
@@ -262,14 +262,22 @@ fn multi_location_fixture() {
     );
     assert_eq!(a.manifest_number().to_string(), "2A");
     let b = by_aki[TA2];
-    assert_eq!(b.locations().len(), 3);
-    assert!(!b.locations()[1].is_signed_object());
+    let uris: Vec<&str> = b.locations().iter().map(AccessDescription::uri).collect();
     assert_eq!(
-        b.locations()[1].access_method().to_string(),
+        uris,
+        [
+            "https://example.net/ca2/b.mft",
+            "rsync://example.net/ca2/b.mft",
+            "https://example.net/notification.xml",
+        ]
+    );
+    assert!(!b.locations()[2].is_signed_object());
+    assert_eq!(
+        b.locations()[2].access_method().to_string(),
         "1.3.6.1.5.5.7.48.13"
     );
     assert_eq!(
-        b.locations()[1].uri(),
+        b.locations()[2].uri(),
         "https://example.net/notification.xml"
     );
     assert_eq!(b.manifest_number().to_string(), "01FF");
@@ -277,6 +285,61 @@ fn multi_location_fixture() {
         decoded.manifests().unwrap().most_recent_update(),
         t(0, 0, 9)
     );
+}
+
+/// The specification defines no order for `locations`; the constructor sorts
+/// them lexicographically (access method, then URI) as a safe default, and
+/// the decoder preserves whatever order a file has.
+#[test]
+fn locations_are_sorted_lexicographically() {
+    let rpki_notify = Oid(Bytes::from_static(&[43, 6, 1, 5, 5, 7, 48, 13]));
+    let instance = ManifestInstance::new(
+        Digest::sha256(b"x"),
+        1000,
+        ki(TA1),
+        ManifestNumber::from(1u64),
+        t(0, 0, 0),
+        vec![
+            sia("rsync://example.net/b.mft"),
+            AccessDescription::new(rpki_notify.clone(), "rsync://example.net/a.mft").unwrap(),
+            sia("rsync://example.net/a.mft"),
+            sia("https://example.net/b.mft"),
+            sia("rsync://example.net/b.mft"),
+        ],
+        vec![],
+    )
+    .unwrap();
+    let locations: Vec<(String, &str)> = instance
+        .locations()
+        .iter()
+        .map(|l| (l.access_method().to_string(), l.uri()))
+        .collect();
+    assert_eq!(
+        locations,
+        [
+            (
+                "1.3.6.1.5.5.7.48.11".to_string(),
+                "https://example.net/b.mft"
+            ),
+            (
+                "1.3.6.1.5.5.7.48.11".to_string(),
+                "rsync://example.net/a.mft"
+            ),
+            (
+                "1.3.6.1.5.5.7.48.11".to_string(),
+                "rsync://example.net/b.mft"
+            ),
+            (
+                "1.3.6.1.5.5.7.48.13".to_string(),
+                "rsync://example.net/a.mft"
+            ),
+        ]
+    );
+    let ccr = Ccr::builder(t(0, 0, 10))
+        .manifests(ManifestState::new(vec![instance]))
+        .build()
+        .unwrap();
+    assert_eq!(Ccr::decode(&ccr.to_der()).unwrap(), ccr);
 }
 
 #[test]
