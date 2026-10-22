@@ -40,6 +40,14 @@ __all__ = [
     "TrustAnchorState",
     "Vrp",
     "__version__",
+    "AspaPayloadDiff",
+    "AspaUpdate",
+    "CcrDiff",
+    "IssuerChange",
+    "ManifestDiff",
+    "RoaPayloadDiff",
+    "RouterKeyDiff",
+    "TrustAnchorDiff",
 ]
 
 class Error(ValueError):
@@ -453,5 +461,134 @@ class Ccr:
         check_consistency: bool = True,
     ) -> bytes:
         """Validates, then encodes as gzip-compressed DER."""
+    def diff(self, after: Ccr) -> CcrDiff:
+        """The changes from this (older) CCR to ``after``: a linear merge over
+        the canonical sequences; aspects with equal digests are skipped."""
     def __hash__(self) -> int: ...
     def __eq__(self, other: object, /) -> bool: ...
+
+@final
+class IssuerChange:
+    """The manifests of one issuer (AKI) before and after."""
+
+    @property
+    def aki(self) -> bytes: ...
+    @property
+    def kind(self) -> str:
+        """``"added"``, ``"removed"`` or ``"updated"``."""
+    @property
+    def before(self) -> list[ManifestInstance]:
+        """The issuer's manifest instances in the older CCR (usually one)."""
+    @property
+    def after(self) -> list[ManifestInstance]:
+        """The issuer's manifest instances in the newer CCR (usually one)."""
+    def __hash__(self) -> int: ...
+    def __eq__(self, other: object, /) -> bool: ...
+
+@final
+class ManifestDiff:
+    """The manifest difference: by hash (``added``/``removed``) and by issuer (``issuers``)."""
+
+    @property
+    def added(self) -> list[ManifestInstance]: ...
+    @property
+    def removed(self) -> list[ManifestInstance]: ...
+    @property
+    def unchanged(self) -> int: ...
+    @property
+    def issuers(self) -> list[IssuerChange]:
+        """Issuers whose manifests changed, appeared or disappeared, ascending by AKI."""
+    @property
+    def unchanged_issuers(self) -> int: ...
+    def __bool__(self) -> bool: ...
+
+@final
+class RoaPayloadDiff:
+    """Added and removed VRPs."""
+
+    @property
+    def added(self) -> list[Vrp]: ...
+    @property
+    def removed(self) -> list[Vrp]: ...
+    @property
+    def unchanged(self) -> int: ...
+    def __bool__(self) -> bool: ...
+
+@final
+class AspaUpdate:
+    """A customer AS whose provider set changed."""
+
+    @property
+    def customer_asn(self) -> int: ...
+    @property
+    def before(self) -> AspaPayloadSet: ...
+    @property
+    def after(self) -> AspaPayloadSet: ...
+    @property
+    def providers_added(self) -> list[int]: ...
+    @property
+    def providers_removed(self) -> list[int]: ...
+    def __hash__(self) -> int: ...
+    def __eq__(self, other: object, /) -> bool: ...
+
+@final
+class AspaPayloadDiff:
+    """The ASPA difference, keyed by customer AS."""
+
+    @property
+    def added(self) -> list[AspaPayloadSet]: ...
+    @property
+    def removed(self) -> list[AspaPayloadSet]: ...
+    @property
+    def updated(self) -> list[AspaUpdate]: ...
+    @property
+    def unchanged(self) -> int: ...
+    def __bool__(self) -> bool: ...
+
+@final
+class TrustAnchorDiff:
+    """Added and removed trust anchor key identifiers."""
+
+    @property
+    def added(self) -> list[bytes]: ...
+    @property
+    def removed(self) -> list[bytes]: ...
+    @property
+    def unchanged(self) -> int: ...
+    def __bool__(self) -> bool: ...
+
+@final
+class RouterKeyDiff:
+    """Added and removed router keys."""
+
+    @property
+    def added(self) -> list[RouterKey]: ...
+    @property
+    def removed(self) -> list[RouterKey]: ...
+    @property
+    def unchanged(self) -> int: ...
+    def __bool__(self) -> bool: ...
+
+@final
+class CcrDiff:
+    """The changes from an older CCR to a newer one, as returned by ``Ccr.diff``.
+
+    An aspect absent on one side is compared as if it were empty; an aspect
+    absent on both sides is ``None``. ``bool(diff)`` is true when anything changed.
+    """
+
+    @property
+    def before_produced_at(self) -> datetime.datetime: ...
+    @property
+    def after_produced_at(self) -> datetime.datetime: ...
+    @property
+    def manifests(self) -> ManifestDiff | None: ...
+    @property
+    def roa_payloads(self) -> RoaPayloadDiff | None: ...
+    @property
+    def aspa_payloads(self) -> AspaPayloadDiff | None: ...
+    @property
+    def trust_anchors(self) -> TrustAnchorDiff | None: ...
+    @property
+    def router_keys(self) -> RouterKeyDiff | None: ...
+    def __bool__(self) -> bool: ...

@@ -98,7 +98,36 @@ defines no order for them (in practice there is exactly one), so
 then URI) as a safe default for
 deterministic output, while decoded instances keep their encoded order.
 
-## Example: `ccr-dump`
+## Comparing files
+
+`Ccr::diff` computes the changes from one CCR to another as a linear merge
+over the canonical sequences, skipping aspects whose digests are equal:
+
+```rust
+let diff = before.diff(&after);
+for vrp in diff.roa_payloads().map_or(&[][..], |d| d.added()) {
+    println!("+ {vrp}");
+}
+for change in diff.manifests().map_or(&[][..], |d| d.issuers()) {
+    println!("{:?} {}: {} -> {}", change.kind(), change.aki(), change.before().len(), change.after().len());
+}
+```
+
+VRPs, trust anchors and router keys are set differences (`added`, `removed`,
+`unchanged`). Manifests come in two views: by hash (`added`/`removed`) and
+grouped by issuer (`issuers()`, each `IssuerChange` being added, removed or
+updated with the instances before and after). ASPA payloads are keyed by
+customer AS with per-customer provider deltas. Aspects absent on one side
+are compared as empty; aspects absent on both are `None`.
+
+## Examples
+
+```sh
+cargo run --example ccr-dump -- crates/rpki-ccr/tests/data/example.ccr
+cargo run --example ccr-diff -- old.ccr new.ccr        # add --summary for counts only
+```
+
+### `ccr-dump`
 
 Prints a file in the textual format of the specification's Appendix B and of
 `rpki-client -f`, for side-by-side comparison:

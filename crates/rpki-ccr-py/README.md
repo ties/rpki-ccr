@@ -69,6 +69,30 @@ refused unless the same checks are switched off again
 (`to_der(verify_hashes=False)`). `ccr.validate()` runs the checks without
 encoding. Decoded objects re-encode byte for byte.
 
+## Comparing files
+
+```python
+diff = Ccr.from_file("old.ccr").diff(Ccr.from_file("new.ccr"))
+if diff:                                     # anything changed?
+    for vrp in diff.roa_payloads.added:      # RoaPayloadDiff: added, removed, unchanged
+        print("+", vrp)
+    for change in diff.manifests.issuers:    # by issuer: kind is "added", "removed" or "updated"
+        print(change.kind, change.aki.hex(), [mi.manifest_number for mi in change.after])
+    for update in diff.aspa_payloads.updated:
+        print(update.customer_asn, update.providers_added, update.providers_removed)
+```
+
+The diff is a linear merge in Rust over the canonical sequences (aspects
+with equal digests are skipped), so comparing two full-RPKI files costs
+milliseconds. Manifests are reported both by hash (`added`/`removed`) and
+grouped by issuer (`issuers`); aspects absent on one side are compared as
+empty, aspects absent on both are `None`.
+
+## Examples
+
+`examples/ccr_diff.py OLD NEW` prints the changes between two files in the
+same layout as the Rust `ccr-diff` example.
+
 ## Development
 
 ```sh

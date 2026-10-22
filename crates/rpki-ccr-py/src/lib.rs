@@ -7,6 +7,7 @@ mod access;
 mod aspa;
 mod ccr;
 mod convert;
+mod diff;
 mod error;
 mod manifest;
 mod resources;
@@ -34,6 +35,14 @@ fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<router_key::PyRouterKey>()?;
     m.add_class::<router_key::PyRouterKeyState>()?;
     m.add_class::<ccr::PyCcr>()?;
+    m.add_class::<diff::PyCcrDiff>()?;
+    m.add_class::<diff::PyManifestDiff>()?;
+    m.add_class::<diff::PyIssuerChange>()?;
+    m.add_class::<diff::PyRoaPayloadDiff>()?;
+    m.add_class::<diff::PyAspaPayloadDiff>()?;
+    m.add_class::<diff::PyAspaUpdate>()?;
+    m.add_class::<diff::PyTrustAnchorDiff>()?;
+    m.add_class::<diff::PyRouterKeyDiff>()?;
 
     let sequence = py.import("collections.abc")?.getattr("Sequence")?;
     for name in [

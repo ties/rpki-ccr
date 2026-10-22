@@ -49,6 +49,11 @@
 //! assert_eq!(Ccr::decode(&der).unwrap(), ccr);
 //! ```
 //!
+//! Two CCRs compare with [`Ccr::diff`], a linear merge over the canonical
+//! sequences that reports added and removed VRPs, trust anchors and router
+//! keys, manifests both by hash and grouped by issuer, and per-customer ASPA
+//! provider changes.
+//!
 //! # Features
 //!
 //! * `gzip` (default): transparently inflate gzip-compressed CCR files
@@ -60,6 +65,7 @@
 mod access;
 mod aspa;
 mod ccr;
+mod diff;
 mod digest;
 mod encode;
 mod error;
@@ -80,6 +86,9 @@ mod validate;
 pub use access::AccessDescription;
 pub use aspa::{AspaPayloadSet, AspaPayloadState};
 pub use ccr::{Ccr, CcrBuilder, HashAlgorithm};
+pub use diff::{
+    AspaPayloadDiff, AspaUpdate, CcrDiff, ChangeKind, IssuerChange, ManifestDiff, SetDiff,
+};
 pub use digest::Digest;
 pub use error::{Aspect, Error};
 pub use key_identifier::KeyIdentifier;

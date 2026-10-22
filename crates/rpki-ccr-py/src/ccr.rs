@@ -324,6 +324,16 @@ impl PyCcr {
         Ok(PyBytes::new(py, &gz))
     }
 
+    /// Computes the changes from this (older) CCR to `after`.
+    fn diff(&self, py: Python<'_>, after: PyRef<'_, PyCcr>) -> crate::diff::PyCcrDiff {
+        let before = Arc::clone(&self.inner);
+        let after = Arc::clone(&after.inner);
+        let diff = py.detach(move || before.ccr.diff(&after.ccr));
+        crate::diff::PyCcrDiff {
+            inner: Arc::new(diff),
+        }
+    }
+
     fn __repr__(&self) -> String {
         let ccr = &self.inner.ccr;
         let count = |n: Option<usize>| n.map_or("None".to_string(), |n| n.to_string());
