@@ -57,7 +57,7 @@ fn spki(b64: &str) -> SubjectPublicKeyInfo {
 #[test]
 fn round_trip_example_vector() {
     let ccr = Ccr::decode(DATA).unwrap();
-    assert_eq!(ccr.to_der().as_ref(), DATA);
+    assert_eq!(ccr.to_der().unwrap().as_ref(), DATA);
     let mut out = Vec::new();
     ccr.write_der(&mut out).unwrap();
     assert_eq!(out, DATA);
@@ -177,7 +177,7 @@ fn builds_example_vector_from_scratch() {
         .router_keys(rks)
         .build()
         .unwrap();
-    assert_eq!(ccr.to_der().as_ref(), DATA);
+    assert_eq!(ccr.to_der().unwrap().as_ref(), DATA);
     assert_eq!(ccr, Ccr::decode(DATA).unwrap());
 }
 
@@ -225,7 +225,7 @@ fn multi_location_fixture() {
         .trust_anchors(TrustAnchorState::new(vec![ki(TA1), ki(TA2)]).unwrap())
         .build()
         .unwrap();
-    let der = ccr.to_der();
+    let der = ccr.to_der().unwrap();
 
     if std::env::var_os("RPKI_CCR_WRITE_FIXTURES").is_some() {
         std::fs::write(&path, &der).unwrap();
@@ -339,7 +339,7 @@ fn locations_are_sorted_lexicographically() {
         .manifests(ManifestState::new(vec![instance]))
         .build()
         .unwrap();
-    assert_eq!(Ccr::decode(&ccr.to_der()).unwrap(), ccr);
+    assert_eq!(Ccr::decode(&ccr.to_der().unwrap()).unwrap(), ccr);
 }
 
 #[test]
@@ -381,7 +381,7 @@ fn canonical_roa_payloads() {
         .roa_payloads(state)
         .build()
         .unwrap();
-    assert_eq!(Ccr::decode(&ccr.to_der()).unwrap(), ccr);
+    assert_eq!(Ccr::decode(&ccr.to_der().unwrap()).unwrap(), ccr);
 }
 
 #[test]
@@ -512,7 +512,7 @@ fn merging_and_deduplication() {
     assert!(empty.is_empty());
     assert_eq!(empty.most_recent_update(), DateTime::UNIX_EPOCH);
     let ccr = Ccr::builder(t(0, 0, 10)).manifests(empty).build().unwrap();
-    assert_eq!(Ccr::decode(&ccr.to_der()).unwrap(), ccr);
+    assert_eq!(Ccr::decode(&ccr.to_der().unwrap()).unwrap(), ccr);
 
     let rks = RouterKeyState::new(vec![
         RouterKeySet::new(Asn::new(1), vec![RouterKey::new(ki(TA2), spki(SPKI1))]).unwrap(),
@@ -564,7 +564,7 @@ fn round_trip_external_file() {
         data
     };
     let ccr = Ccr::decode_der(&der).unwrap();
-    let encoded = ccr.to_der();
+    let encoded = ccr.to_der().unwrap();
     assert_eq!(encoded.len(), der.len());
     assert!(
         encoded.as_ref() == der.as_slice(),

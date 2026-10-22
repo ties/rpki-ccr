@@ -94,7 +94,7 @@ impl RoaPayloadSet {
             family
                 .addresses
                 .iter()
-                .map(move |address| Vrp::from_parts(self.as_id, address))
+                .map(move |address| Vrp::from_address(self.as_id, address))
         })
     }
 
@@ -201,7 +201,7 @@ impl RoaPayloadState {
         state
     }
 
-    fn encode_payload(&self) -> impl Values + '_ {
+    pub(crate) fn encode_payload(&self) -> impl Values + '_ {
         encode::sequence(encode::iter(
             self.sets.iter().map(RoaPayloadSet::encode_ref),
         ))

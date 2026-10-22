@@ -11,7 +11,7 @@ use std::process::ExitCode;
 
 use base64::prelude::*;
 use chrono::{DateTime, Utc};
-use rpki_ccr::{Ccr, DecodeOptions, Digest, ManifestInstance};
+use rpki_ccr::{Ccr, Digest, ManifestInstance, ValidationOptions};
 
 fn b64(bytes: &[u8]) -> String {
     BASE64_STANDARD.encode(bytes)
@@ -94,9 +94,9 @@ fn main() -> ExitCode {
     line("Hash identifier:", b64(Digest::sha256(&der).as_slice()));
 
     let options = if lenient {
-        DecodeOptions::lenient()
+        ValidationOptions::lenient()
     } else {
-        DecodeOptions::strict()
+        ValidationOptions::strict()
     };
     let ccr = match Ccr::decode_der_with(&der, &options) {
         Ok(ccr) => ccr,

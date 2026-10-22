@@ -44,9 +44,9 @@ impl fmt::Display for Aspect {
 /// Structural problems (malformed DER, wrong content type, out-of-range
 /// values, missing mandatory elements) are reported as [`Error::Der`] with
 /// the byte position of the offending element. The remaining variants are
-/// semantic checks that can be disabled through [`DecodeOptions`].
+/// semantic checks that can be disabled through [`ValidationOptions`].
 ///
-/// [`DecodeOptions`]: crate::DecodeOptions
+/// [`ValidationOptions`]: crate::ValidationOptions
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {

@@ -7,6 +7,7 @@ use bcder::Unsigned;
 use bcder::decode::{Constructed, DecodeError, Source};
 use bytes::Bytes;
 
+use crate::Error;
 use crate::hex;
 use std::io;
 
@@ -50,6 +51,24 @@ impl ManifestNumber {
             return Err(cons.content_err("manifest number must fit in 20 octets"));
         }
         Ok(Self::from_magnitude(value.into_bytes()))
+    }
+
+    /// Creates a manifest number from big-endian magnitude octets. Leading
+    /// zero octets are ignored and an empty slice is zero. The value must be
+    /// representable in 20 DER content octets, i.e. below 2^159.
+    pub fn try_from_be_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        if bytes.is_empty() {
+            return Ok(Self::from(0u64));
+        }
+        let number = Self::from_magnitude(Bytes::copy_from_slice(bytes));
+        let octets = number.0.len() + usize::from(number.0[0] & 0x80 != 0);
+        if octets > Self::MAX_LEN {
+            return Err(Error::invalid(format!(
+                "manifest number needs {octets} octets, the maximum is {}",
+                Self::MAX_LEN
+            )));
+        }
+        Ok(number)
     }
 
     /// Strips redundant leading zero octets (DER adds one when the top bit is set).
@@ -154,6 +173,26 @@ mod tests {
         assert_eq!(ManifestNumber::from(u128::MAX).as_u128(), Some(u128::MAX));
         let big = ManifestNumber(Bytes::from(vec![1u8; 17]));
         assert_eq!(big.as_u128(), None);
+    }
+
+    #[test]
+    fn from_be_bytes_bounds() {
+        assert_eq!(
+            ManifestNumber::try_from_be_bytes(&[]).unwrap().as_bytes(),
+            &[0]
+        );
+        assert_eq!(
+            ManifestNumber::try_from_be_bytes(&[0, 0, 1, 1])
+                .unwrap()
+                .to_string(),
+            "0101"
+        );
+        assert!(ManifestNumber::try_from_be_bytes(&[0x7f; 20]).is_ok());
+        assert!(ManifestNumber::try_from_be_bytes(&[0x80; 20]).is_err());
+        assert!(ManifestNumber::try_from_be_bytes(&[1; 21]).is_err());
+        let mut padded = vec![0; 5];
+        padded.extend_from_slice(&[0x7f; 20]);
+        assert!(ManifestNumber::try_from_be_bytes(&padded).is_ok());
     }
 
     #[test]

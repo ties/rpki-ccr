@@ -4,9 +4,10 @@ use std::cmp::Ordering;
 
 use bcder::Captured;
 
+use crate::encode::digest_of;
 use crate::error::Aspect;
 use crate::time::EPOCH;
-use crate::{Asn, Ccr, DecodeOptions, Digest, Error};
+use crate::{Asn, Ccr, Digest, Error, ValidationOptions};
 
 /// The captured DER encoding of a hashed state payload together with the
 /// digest declared for it.
@@ -16,10 +17,12 @@ pub(crate) struct HashedPayload {
     pub declared: Digest,
 }
 
+/// Validates a freshly decoded CCR: digests are verified against the DER
+/// payload bytes captured while decoding.
 pub(crate) fn validate(
     ccr: &Ccr,
     hashed: &[HashedPayload],
-    options: &DecodeOptions,
+    options: &ValidationOptions,
 ) -> Result<(), Error> {
     if options.verify_hashes {
         for item in hashed {
@@ -33,6 +36,64 @@ pub(crate) fn validate(
             }
         }
     }
+    check_rules(ccr, options)
+}
+
+/// Validates the current contents of a CCR: digests are recomputed by
+/// encoding each present state's payload.
+pub(crate) fn validate_current(ccr: &Ccr, options: &ValidationOptions) -> Result<(), Error> {
+    if options.verify_hashes {
+        let check = |aspect: Aspect, declared: &Digest, computed: Digest| {
+            if computed != *declared {
+                Err(Error::HashMismatch {
+                    aspect,
+                    declared: *declared,
+                    computed,
+                })
+            } else {
+                Ok(())
+            }
+        };
+        if let Some(state) = ccr.manifests() {
+            check(
+                Aspect::Manifests,
+                state.hash(),
+                digest_of(&state.encode_payload()),
+            )?;
+        }
+        if let Some(state) = ccr.roa_payloads() {
+            check(
+                Aspect::RoaPayloads,
+                state.hash(),
+                digest_of(&state.encode_payload()),
+            )?;
+        }
+        if let Some(state) = ccr.aspa_payloads() {
+            check(
+                Aspect::AspaPayloads,
+                state.hash(),
+                digest_of(&state.encode_payload()),
+            )?;
+        }
+        if let Some(state) = ccr.trust_anchors() {
+            check(
+                Aspect::TrustAnchors,
+                state.hash(),
+                digest_of(&state.encode_payload()),
+            )?;
+        }
+        if let Some(state) = ccr.router_keys() {
+            check(
+                Aspect::RouterKeys,
+                state.hash(),
+                digest_of(&state.encode_payload()),
+            )?;
+        }
+    }
+    check_rules(ccr, options)
+}
+
+fn check_rules(ccr: &Ccr, options: &ValidationOptions) -> Result<(), Error> {
     if options.check_ordering {
         check_ordering(ccr)?;
     }

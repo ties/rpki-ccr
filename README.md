@@ -54,10 +54,10 @@ Structural and bounds violations are always errors. The semantic groups can be
 relaxed to inspect non-conforming files:
 
 ```rust
-use rpki_ccr::{Ccr, DecodeOptions};
+use rpki_ccr::{Ccr, ValidationOptions};
 
-let ccr = Ccr::decode_with(&data, &DecodeOptions::strict().verify_hashes(false))?;
-let ccr = Ccr::decode_with(&data, &DecodeOptions::lenient())?;
+let ccr = Ccr::decode_with(&data, &ValidationOptions::strict().verify_hashes(false))?;
+let ccr = Ccr::decode_with(&data, &ValidationOptions::lenient())?;
 ```
 
 Unknown future state aspects (context tags above `[5]`) are tolerated and
@@ -82,8 +82,14 @@ let vrps = RoaPayloadState::from_vrps([
 let tas = TrustAnchorState::new(vec![KeyIdentifier::from_hex("25f8ccfcefc046d8dcd00fc0e444e0aa7b790f96").unwrap()])?;
 let produced_at = chrono::Utc::now().with_nanosecond(0).unwrap(); // whole seconds only
 let ccr = Ccr::builder(produced_at).roa_payloads(vrps).trust_anchors(tas).build()?;
-let der = ccr.to_der();            // or write_der(&mut file), to_der_gzip()
+let der = ccr.to_der()?;           // or write_der(&mut file)?, to_der_gzip()?
 ```
+
+Encoding validates first: `to_der()` recomputes the state digests from the
+object's current data and runs the ordering and consistency checks, so an
+object decoded with checks switched off is refused unless the same checks
+are switched off with `to_der_with(&ValidationOptions::lenient())`.
+`Ccr::validate` runs the checks without encoding.
 
 Everything the specification orders is sorted by the constructors. The
 `locations` of a manifest instance are the exception: the specification

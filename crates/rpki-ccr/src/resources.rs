@@ -315,7 +315,8 @@ impl Vrp {
             })
     }
 
-    pub(crate) fn from_parts(asn: Asn, address: &RoaIpAddress) -> Self {
+    /// Creates the VRP for `address` originated by `asn`.
+    pub fn from_address(asn: Asn, address: &RoaIpAddress) -> Self {
         Vrp {
             asn,
             prefix: address.prefix(),

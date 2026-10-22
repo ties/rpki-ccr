@@ -12,8 +12,8 @@ use chrono::{DateTime, Utc};
 use crate::time::take_generalized_time;
 use crate::validate::{self, HashedPayload};
 use crate::{
-    AspaPayloadState, DecodeOptions, Error, ManifestState, RoaPayloadState, RouterKeyState,
-    TrustAnchorState, oid,
+    AspaPayloadState, Error, ManifestState, RoaPayloadState, RouterKeyState, TrustAnchorState,
+    ValidationOptions, oid,
 };
 use std::io;
 
@@ -53,11 +53,11 @@ impl Ccr {
     /// Gzip-compressed input (`application/rpki-ccr+gzip`) is detected by its
     /// magic number and inflated when the `gzip` feature is enabled.
     pub fn decode(data: &[u8]) -> Result<Self, Error> {
-        Self::decode_with(data, &DecodeOptions::strict())
+        Self::decode_with(data, &ValidationOptions::strict())
     }
 
     /// Decodes a CCR file, possibly gzip-compressed, with the given options.
-    pub fn decode_with(data: &[u8], options: &DecodeOptions) -> Result<Self, Error> {
+    pub fn decode_with(data: &[u8], options: &ValidationOptions) -> Result<Self, Error> {
         if Self::is_gzip(data) {
             let inflated = inflate(data)?;
             Self::decode_der_bytes_with(Bytes::from(inflated), options)
@@ -68,11 +68,11 @@ impl Ccr {
 
     /// Decodes an uncompressed DER-encoded CCR with strict validation.
     pub fn decode_der(der: &[u8]) -> Result<Self, Error> {
-        Self::decode_der_with(der, &DecodeOptions::strict())
+        Self::decode_der_with(der, &ValidationOptions::strict())
     }
 
     /// Decodes an uncompressed DER-encoded CCR with the given options.
-    pub fn decode_der_with(der: &[u8], options: &DecodeOptions) -> Result<Self, Error> {
+    pub fn decode_der_with(der: &[u8], options: &ValidationOptions) -> Result<Self, Error> {
         Self::decode_der_bytes_with(Bytes::copy_from_slice(der), options)
     }
 
@@ -80,12 +80,12 @@ impl Ccr {
     /// strict validation. Public keys and other byte values are sliced from
     /// the input without copying.
     pub fn decode_der_bytes(der: Bytes) -> Result<Self, Error> {
-        Self::decode_der_bytes_with(der, &DecodeOptions::strict())
+        Self::decode_der_bytes_with(der, &ValidationOptions::strict())
     }
 
     /// Decodes an uncompressed DER-encoded CCR held in shared bytes with the
     /// given options.
-    pub fn decode_der_bytes_with(der: Bytes, options: &DecodeOptions) -> Result<Self, Error> {
+    pub fn decode_der_bytes_with(der: Bytes, options: &ValidationOptions) -> Result<Self, Error> {
         let (ccr, hashed) = parse(der)?;
         validate::validate(&ccr, &hashed, options)?;
         Ok(ccr)
@@ -94,12 +94,15 @@ impl Ccr {
     /// Reads and decodes a CCR file, possibly gzip-compressed, with strict
     /// validation.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, Error> {
-        Self::from_file_with(path, &DecodeOptions::strict())
+        Self::from_file_with(path, &ValidationOptions::strict())
     }
 
     /// Reads and decodes a CCR file, possibly gzip-compressed, with the given
     /// options.
-    pub fn from_file_with(path: impl AsRef<Path>, options: &DecodeOptions) -> Result<Self, Error> {
+    pub fn from_file_with(
+        path: impl AsRef<Path>,
+        options: &ValidationOptions,
+    ) -> Result<Self, Error> {
         let data = std::fs::read(path)?;
         Self::decode_with(&data, options)
     }
@@ -339,6 +342,9 @@ impl Ccr {
     }
 
     /// Returns a DER encoder for the complete CMS `ContentInfo`.
+    ///
+    /// This is the raw encoder: it performs no validation. Prefer
+    /// [`Ccr::to_der`] or [`Ccr::write_der`].
     pub fn encode_ref(&self) -> impl Values + '_ {
         encode::sequence((
             oid::CCR_CONTENT_TYPE.encode(),
@@ -368,22 +374,62 @@ impl Ccr {
         ))
     }
 
-    /// Encodes the CCR as DER.
-    pub fn to_der(&self) -> Bytes {
-        self.encode_ref().to_captured(Mode::Der).into_bytes()
+    /// Validates the current contents with `options`.
+    ///
+    /// Unlike decoding, which checks the digests stored in a file against
+    /// the bytes it read, this recomputes every present state's digest from
+    /// the data the object holds now. An object can only fail if it was
+    /// decoded with checks switched off.
+    pub fn validate(&self, options: &ValidationOptions) -> Result<(), Error> {
+        validate::validate_current(self, options)
     }
 
-    /// Writes the DER encoding to `target`.
-    pub fn write_der<W: io::Write>(&self, target: &mut W) -> io::Result<()> {
-        self.encode_ref().write_encoded(Mode::Der, target)
+    /// Validates strictly, then encodes the CCR as DER.
+    ///
+    /// Decoded objects re-encode byte for byte. An object decoded with
+    /// checks switched off is refused unless the same checks are switched
+    /// off here; see [`Ccr::to_der_with`].
+    pub fn to_der(&self) -> Result<Bytes, Error> {
+        self.to_der_with(&ValidationOptions::strict())
     }
 
-    /// Encodes the CCR as gzip-compressed DER (`application/rpki-ccr+gzip`).
+    /// Validates with `options`, then encodes the CCR as DER.
+    /// [`ValidationOptions::lenient`] emits the object exactly as it is.
+    pub fn to_der_with(&self, options: &ValidationOptions) -> Result<Bytes, Error> {
+        self.validate(options)?;
+        Ok(self.encode_ref().to_captured(Mode::Der).into_bytes())
+    }
+
+    /// Validates strictly, then writes the DER encoding to `target`.
+    pub fn write_der<W: io::Write>(&self, target: &mut W) -> Result<(), Error> {
+        self.write_der_with(target, &ValidationOptions::strict())
+    }
+
+    /// Validates with `options`, then writes the DER encoding to `target`.
+    pub fn write_der_with<W: io::Write>(
+        &self,
+        target: &mut W,
+        options: &ValidationOptions,
+    ) -> Result<(), Error> {
+        self.validate(options)?;
+        self.encode_ref().write_encoded(Mode::Der, target)?;
+        Ok(())
+    }
+
+    /// Validates strictly, then encodes the CCR as gzip-compressed DER
+    /// (`application/rpki-ccr+gzip`).
     #[cfg(feature = "gzip")]
-    pub fn to_der_gzip(&self) -> io::Result<Vec<u8>> {
+    pub fn to_der_gzip(&self) -> Result<Vec<u8>, Error> {
+        self.to_der_gzip_with(&ValidationOptions::strict())
+    }
+
+    /// Validates with `options`, then encodes the CCR as gzip-compressed DER.
+    #[cfg(feature = "gzip")]
+    pub fn to_der_gzip_with(&self, options: &ValidationOptions) -> Result<Vec<u8>, Error> {
+        self.validate(options)?;
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        self.write_der(&mut encoder)?;
-        encoder.finish()
+        self.encode_ref().write_encoded(Mode::Der, &mut encoder)?;
+        Ok(encoder.finish()?)
     }
 }
 
@@ -451,7 +497,9 @@ impl CcrBuilder {
             router_keys: self.router_keys,
             extensions: Vec::new(),
         };
-        validate::validate(&ccr, &[], &DecodeOptions::strict())?;
+        // The constructors computed the digests from this very data, so
+        // only the ordering and consistency rules need checking here.
+        validate::validate_current(&ccr, &ValidationOptions::strict().verify_hashes(false))?;
         Ok(ccr)
     }
 }

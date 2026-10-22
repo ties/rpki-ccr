@@ -1,25 +1,25 @@
-//! Decoding options.
+//! Validation options.
 
-/// Controls which semantic checks [`Ccr::decode_with`] performs.
+/// Controls which semantic checks decoding and encoding perform.
 ///
 /// Structural checks (DER well-formedness, mandatory fields, value bounds)
 /// are always enforced. The checks below are the ones that may be relaxed to
 /// inspect files produced by non-conforming or buggy relying parties.
 ///
 /// ```
-/// use rpki_ccr::DecodeOptions;
+/// use rpki_ccr::ValidationOptions;
 ///
-/// let strict = DecodeOptions::strict();
+/// let strict = ValidationOptions::strict();
 /// assert!(strict.verify_hashes && strict.check_ordering && strict.check_consistency);
 ///
-/// let no_hashes = DecodeOptions::strict().verify_hashes(false);
+/// let no_hashes = ValidationOptions::strict().verify_hashes(false);
 /// assert!(!no_hashes.verify_hashes && no_hashes.check_ordering);
 /// ```
 ///
 /// [`Ccr::decode_with`]: crate::Ccr::decode_with
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub struct DecodeOptions {
+pub struct ValidationOptions {
     /// Verify the SHA-256 digest of every state aspect against its payload.
     pub verify_hashes: bool,
     /// Verify that every sequence is sorted as required and free of duplicates.
@@ -29,10 +29,10 @@ pub struct DecodeOptions {
     pub check_consistency: bool,
 }
 
-impl DecodeOptions {
+impl ValidationOptions {
     /// All checks enabled. This is the default.
     pub const fn strict() -> Self {
-        DecodeOptions {
+        ValidationOptions {
             verify_hashes: true,
             check_ordering: true,
             check_consistency: true,
@@ -41,7 +41,7 @@ impl DecodeOptions {
 
     /// All semantic checks disabled; only structural validity is enforced.
     pub const fn lenient() -> Self {
-        DecodeOptions {
+        ValidationOptions {
             verify_hashes: false,
             check_ordering: false,
             check_consistency: false,
@@ -67,7 +67,7 @@ impl DecodeOptions {
     }
 }
 
-impl Default for DecodeOptions {
+impl Default for ValidationOptions {
     fn default() -> Self {
         Self::strict()
     }

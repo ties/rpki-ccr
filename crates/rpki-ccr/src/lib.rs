@@ -10,7 +10,7 @@
 //! requirement of the specification: digest verification, canonical ordering
 //! and uniqueness, and the contextual bounds of all fields. Analytics tooling
 //! that must inspect non-conforming files can relax the semantic checks with
-//! [`DecodeOptions`].
+//! [`ValidationOptions`].
 //!
 //! ```no_run
 //! use rpki_ccr::Ccr;
@@ -25,9 +25,10 @@
 //! }
 //! ```
 //!
-//! A `Ccr` re-encodes byte-for-byte with [`Ccr::to_der`]. New files are
-//! built from the canonicalising constructors of the state types and
-//! [`Ccr::builder`]:
+//! A `Ccr` re-encodes byte-for-byte with [`Ccr::to_der`], which validates
+//! the object first so that a file decoded with checks switched off cannot
+//! be written back unnoticed. New files are built from the canonicalising
+//! constructors of the state types and [`Ccr::builder`]:
 //!
 //! ```
 //! use chrono::{TimeZone, Utc};
@@ -44,7 +45,7 @@
 //!     .trust_anchors(tas)
 //!     .build()
 //!     .unwrap();
-//! let der = ccr.to_der();
+//! let der = ccr.to_der().unwrap();
 //! assert_eq!(Ccr::decode(&der).unwrap(), ccr);
 //! ```
 //!
@@ -84,7 +85,7 @@ pub use error::{Aspect, Error};
 pub use key_identifier::KeyIdentifier;
 pub use manifest::{ManifestInstance, ManifestState};
 pub use manifest_number::ManifestNumber;
-pub use options::DecodeOptions;
+pub use options::ValidationOptions;
 pub use resources::{Afi, Asn, Prefix, RoaIpAddress, Vrp};
 pub use roa::{RoaIpAddressFamily, RoaPayloadSet, RoaPayloadState};
 pub use router_key::{RouterKey, RouterKeySet, RouterKeyState};

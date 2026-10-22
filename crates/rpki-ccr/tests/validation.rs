@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use rpki_ccr::{Asn, Aspect, Ccr, DecodeOptions, Error};
+use rpki_ccr::{Asn, Aspect, Ccr, Error, ValidationOptions};
 
 const FIXTURE: &[u8] = include_bytes!("data/example.ccr");
 
@@ -24,7 +24,7 @@ fn assert_der_err(data: &[u8], needle: &str) {
     }
     assert!(
         matches!(
-            Ccr::decode_with(data, &DecodeOptions::lenient()),
+            Ccr::decode_with(data, &ValidationOptions::lenient()),
             Err(Error::Der(_))
         ),
         "structural errors must not be suppressed by lenient mode"
@@ -59,9 +59,9 @@ fn hash_mismatch() {
         }
         other => panic!("{other:?}"),
     }
-    assert!(Ccr::decode_with(&data, &DecodeOptions::lenient()).is_ok());
-    assert!(Ccr::decode_with(&data, &DecodeOptions::strict().verify_hashes(false)).is_ok());
-    assert!(Ccr::decode_with(&data, &DecodeOptions::strict().check_ordering(false)).is_err());
+    assert!(Ccr::decode_with(&data, &ValidationOptions::lenient()).is_ok());
+    assert!(Ccr::decode_with(&data, &ValidationOptions::strict().verify_hashes(false)).is_ok());
+    assert!(Ccr::decode_with(&data, &ValidationOptions::strict().check_ordering(false)).is_err());
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn hash_mismatch_in_the_real_fixture() {
             ..
         }
     ));
-    assert!(Ccr::decode_with(&data, &DecodeOptions::strict().verify_hashes(false)).is_ok());
+    assert!(Ccr::decode_with(&data, &ValidationOptions::strict().verify_hashes(false)).is_ok());
 }
 
 #[test]
@@ -97,9 +97,17 @@ fn trust_anchor_ordering() {
         }
     ));
     let unsorted = ta_only(&[ski(2), ski(1)]);
-    assert!(Ccr::decode_with(&unsorted, &DecodeOptions::lenient()).is_ok());
-    assert!(Ccr::decode_with(&unsorted, &DecodeOptions::strict().verify_hashes(false)).is_err());
-    assert!(Ccr::decode_with(&unsorted, &DecodeOptions::strict().check_ordering(false)).is_ok());
+    assert!(Ccr::decode_with(&unsorted, &ValidationOptions::lenient()).is_ok());
+    assert!(
+        Ccr::decode_with(&unsorted, &ValidationOptions::strict().verify_hashes(false)).is_err()
+    );
+    assert!(
+        Ccr::decode_with(
+            &unsorted,
+            &ValidationOptions::strict().check_ordering(false)
+        )
+        .is_ok()
+    );
     // Unsigned 160-bit comparison: a leading 0x80 octet sorts after 0x7f.
     let mut hi = ski(0x7f);
     hi[0] = 0x80;
@@ -189,7 +197,7 @@ fn aspa_rules() {
     assert!(
         Ccr::decode_with(
             &as0_with_others,
-            &DecodeOptions::strict().check_consistency(false)
+            &ValidationOptions::strict().check_consistency(false)
         )
         .is_ok()
     );
@@ -514,7 +522,7 @@ fn manifest_rules() {
     assert!(
         Ccr::decode_with(
             &later_than_produced,
-            &DecodeOptions::strict().check_consistency(false)
+            &ValidationOptions::strict().check_consistency(false)
         )
         .is_ok()
     );
@@ -843,4 +851,76 @@ fn top_level_rules() {
         &ccr(T0, &[ctx(6, &seq(&[])), ta.clone()]),
         "unexpected element",
     );
+}
+
+#[test]
+fn encoding_validates_by_default() {
+    let mut tampered = FIXTURE.to_vec();
+    tampered[752] ^= 1; // inside the ManifestState hash octet string
+    let lenient = ValidationOptions::lenient();
+    let decoded = Ccr::decode_with(&tampered, &lenient).unwrap();
+    assert!(matches!(
+        decoded.to_der(),
+        Err(Error::HashMismatch {
+            aspect: Aspect::Manifests,
+            ..
+        })
+    ));
+    assert!(matches!(
+        decoded.validate(&ValidationOptions::strict()),
+        Err(Error::HashMismatch {
+            aspect: Aspect::Manifests,
+            ..
+        })
+    ));
+    assert!(
+        decoded
+            .validate(&ValidationOptions::strict().verify_hashes(false))
+            .is_ok()
+    );
+    assert_eq!(
+        decoded.to_der_with(&lenient).unwrap().as_ref(),
+        tampered.as_slice()
+    );
+    assert_eq!(
+        decoded
+            .to_der_with(&ValidationOptions::strict().verify_hashes(false))
+            .unwrap()
+            .as_ref(),
+        tampered.as_slice()
+    );
+    let mut out = Vec::new();
+    assert!(matches!(
+        decoded.write_der(&mut out),
+        Err(Error::HashMismatch { .. })
+    ));
+    assert!(out.is_empty());
+    decoded.write_der_with(&mut out, &lenient).unwrap();
+    assert_eq!(out, tampered);
+    #[cfg(feature = "gzip")]
+    {
+        assert!(decoded.to_der_gzip().is_err());
+        let gz = decoded.to_der_gzip_with(&lenient).unwrap();
+        assert_eq!(Ccr::decode_with(&gz, &lenient).unwrap(), decoded);
+    }
+
+    let unsorted = ccr(T0, &[ta_state(&[ski(2), ski(1)], None)]);
+    let decoded = Ccr::decode_with(&unsorted, &lenient).unwrap();
+    assert!(matches!(
+        decoded.validate(&ValidationOptions::strict()),
+        Err(Error::NotSorted {
+            aspect: Aspect::TrustAnchors,
+            ..
+        })
+    ));
+    assert!(matches!(decoded.to_der(), Err(Error::NotSorted { .. })));
+    assert_eq!(
+        decoded.to_der_with(&lenient).unwrap().as_ref(),
+        unsorted.as_slice()
+    );
+
+    // A validly decoded or built object passes and re-encodes unchanged.
+    let valid = Ccr::decode(FIXTURE).unwrap();
+    valid.validate(&ValidationOptions::strict()).unwrap();
+    assert_eq!(valid.to_der().unwrap().as_ref(), FIXTURE);
 }

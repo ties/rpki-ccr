@@ -85,7 +85,7 @@ impl TrustAnchorState {
         Ok(state)
     }
 
-    fn encode_payload(&self) -> impl Values + '_ {
+    pub(crate) fn encode_payload(&self) -> impl Values + '_ {
         encode::sequence(encode::iter(
             self.skis.iter().map(KeyIdentifier::encode_ref),
         ))

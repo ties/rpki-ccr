@@ -130,7 +130,7 @@ impl AspaPayloadState {
         Ok(state)
     }
 
-    fn encode_payload(&self) -> impl Values + '_ {
+    pub(crate) fn encode_payload(&self) -> impl Values + '_ {
         encode::sequence(encode::iter(
             self.sets.iter().map(AspaPayloadSet::encode_ref),
         ))

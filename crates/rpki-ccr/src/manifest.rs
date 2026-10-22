@@ -201,7 +201,7 @@ impl ManifestState {
         state
     }
 
-    fn encode_payload(&self) -> impl Values + '_ {
+    pub(crate) fn encode_payload(&self) -> impl Values + '_ {
         encode::sequence(encode::iter(
             self.instances.iter().map(ManifestInstance::encode_ref),
         ))
