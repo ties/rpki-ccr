@@ -21,7 +21,8 @@ impl Values for RawDer<'_> {
     }
 }
 
-/// A `GeneralizedTime` in the 15-octet form required by RFC 5280.
+/// A `GeneralizedTime` in the 15-octet form required by RFC 5280 section
+/// 4.1.2.5.2 (X.690 section 11.7).
 pub(crate) struct GeneralizedTime(pub DateTime<Utc>);
 
 impl PrimitiveContent for GeneralizedTime {

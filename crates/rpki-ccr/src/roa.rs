@@ -45,6 +45,8 @@ impl RoaPayloadState {
         self.sets.iter().flat_map(RoaPayloadSet::vrps)
     }
 
+    /// Decodes `ROAPayloadState` (draft section 3.4.2): `rps` and the digest
+    /// over the DER-encoded `rps`.
     pub(crate) fn take_from<S: Source>(
         cons: &mut Constructed<S>,
         hashed: &mut Vec<HashedPayload>,
@@ -110,6 +112,8 @@ impl RoaPayloadSet {
                 }
                 Ok(blocks)
             })?;
+            // ipAddrBlocks SEQUENCE (SIZE(1..2)) OF ROAIPAddressFamily (draft section 3,
+            // RFC 9582 section 4.3.1).
             if ip_addr_blocks.is_empty() || ip_addr_blocks.len() > 2 {
                 return Err(
                     cons.content_err("ipAddrBlocks must contain one or two address families")
@@ -153,6 +157,7 @@ impl RoaIpAddressFamily {
                 }
                 Ok(addresses)
             })?;
+            // addresses SEQUENCE (SIZE(1..MAX)) OF ROAIPAddress (RFC 9582 section 4.3.1).
             if addresses.is_empty() {
                 return Err(cons.content_err("addresses must contain at least one ROAIPAddress"));
             }
@@ -164,7 +169,8 @@ impl RoaIpAddressFamily {
 impl RoaPayloadState {
     /// Builds a canonical state from VRPs: grouped by AS number, split by
     /// address family, sorted, deduplicated, with `maxLength` omitted when
-    /// it equals the prefix length.
+    /// it equals the prefix length (RFC 9582 sections 4.3.2.2 and 4.3.3; draft
+    /// section 3.4.2).
     pub fn from_vrps(vrps: impl IntoIterator<Item = Vrp>) -> Self {
         Self::from_addresses(vrps.into_iter().map(|vrp| (vrp.asn(), vrp.address())))
     }
@@ -216,6 +222,7 @@ impl RoaPayloadState {
 impl RoaPayloadSet {
     /// Creates a canonical payload set from at least one address.
     pub fn new(as_id: Asn, addresses: Vec<RoaIpAddress>) -> Result<Self, Error> {
+        // addresses SEQUENCE (SIZE(1..MAX)) OF ROAIPAddress (RFC 9582 section 4.3.1).
         if addresses.is_empty() {
             return Err(Error::invalid(format!(
                 "ROA payload set for AS {as_id} needs at least one address"
@@ -224,6 +231,8 @@ impl RoaPayloadSet {
         Ok(Self::canonical(as_id, addresses))
     }
 
+    /// The canonical form of RFC 9582 section 4.3.3: at most one family per AFI,
+    /// IPv4 before IPv6, addresses ascending and unique (draft section 3.4.2).
     fn canonical(as_id: Asn, addresses: Vec<RoaIpAddress>) -> Self {
         let mut v4 = Vec::new();
         let mut v6 = Vec::new();

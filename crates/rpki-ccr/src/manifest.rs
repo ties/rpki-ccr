@@ -48,6 +48,8 @@ impl ManifestState {
         self.instances.is_empty()
     }
 
+    /// Decodes `ManifestState` (draft section 3.4.1): `mis`, `mostRecentUpdate`
+    /// and the digest over the DER-encoded `mis` (section 3.4.1.3).
     pub(crate) fn take_from<S: Source>(
         cons: &mut Constructed<S>,
         hashed: &mut Vec<HashedPayload>,
@@ -129,16 +131,19 @@ impl ManifestInstance {
         &self.subordinates
     }
 
+    /// Decodes `ManifestInstance` (draft section 3.4.1.1).
     pub(crate) fn take_opt_from<S: Source>(
         cons: &mut Constructed<S>,
     ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
             let hash = Digest::take_from(cons)?;
             let size = cons.take_u64()?;
+            // size INTEGER (1000..MAX) (draft section 3, ASN.1 module).
             if size < 1000 {
                 return Err(cons.content_err("manifest size must be at least 1000 octets"));
             }
             let aki = KeyIdentifier::take_from(cons)?;
+            // manifestNumber INTEGER (0..MAX) of at most 20 octets (draft sections 3 and 6).
             let manifest_number = ManifestNumber::take_from(cons)?;
             let this_update = take_generalized_time(cons)?;
             let locations = cons.take_sequence(|cons| {
@@ -148,6 +153,8 @@ impl ManifestInstance {
                 }
                 Ok(locations)
             })?;
+            // locations SEQUENCE (SIZE(1..MAX)) OF AccessDescription (draft section 3):
+            // the SIA of the manifest's EE certificate (section 3.4.1.1).
             if locations.is_empty() {
                 return Err(
                     cons.content_err("locations must contain at least one AccessDescription")
@@ -161,6 +168,7 @@ impl ManifestInstance {
                 Ok(subordinates)
             })?;
             let subordinates = match subordinates {
+                // subordinates is OPTIONAL but SIZE(1..MAX) when present (draft section 3).
                 Some(list) if list.is_empty() => {
                     return Err(cons.content_err("subordinates must not be empty when present"));
                 }
@@ -184,6 +192,10 @@ impl ManifestState {
     /// Builds a canonical manifest state: instances sorted by hash with
     /// duplicates removed, `mostRecentUpdate` derived from the instances and
     /// the digest computed over the DER-encoded `mis` sequence.
+    ///
+    /// Draft sections 3.4.1.1 (ascending by hash, unique), 3.4.1.2
+    /// (`mostRecentUpdate`, the POSIX epoch when `mis` is empty) and 3.4.1.3
+    /// (the digest).
     pub fn new(instances: Vec<ManifestInstance>) -> Self {
         let instances = sort_dedup_by_key(instances, |instance| *instance.hash());
         let most_recent_update = instances
@@ -230,6 +242,9 @@ impl ManifestInstance {
     /// certificate), so the sort is not a canonical form, just a safe
     /// default that keeps the encoder output deterministic. Decoded
     /// instances keep their encoded order so that re-encoding is exact.
+    ///
+    /// Subordinates are ordered as unsigned 160-bit integers and unique
+    /// (draft section 3.4.1.1); `size` must be at least 1000 (section 3).
     pub fn new(
         hash: Digest,
         size: u64,
@@ -239,11 +254,14 @@ impl ManifestInstance {
         locations: Vec<AccessDescription>,
         subordinates: Vec<KeyIdentifier>,
     ) -> Result<Self, Error> {
+        // size INTEGER (1000..MAX) (draft section 3, ASN.1 module).
         if size < 1000 {
             return Err(Error::invalid(format!(
                 "manifest size {size} is below the minimum of 1000 octets"
             )));
         }
+        // locations SEQUENCE (SIZE(1..MAX)) OF AccessDescription (draft section 3):
+        // the SIA of the manifest's EE certificate (section 3.4.1.1).
         if locations.is_empty() {
             return Err(Error::invalid(
                 "a manifest instance needs at least one location",

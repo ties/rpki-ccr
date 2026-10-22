@@ -44,6 +44,7 @@ impl Digest {
         cons: &mut Constructed<S>,
     ) -> Result<Self, DecodeError<S::Error>> {
         let octets = OctetString::take_from(cons)?;
+        // 32 octets follow from hashAlg being SHA-256 (draft section 3.2).
         Self::try_from(octets.to_bytes().as_ref())
             .map_err(|_| cons.content_err("SHA-256 digest must be exactly 32 octets"))
     }

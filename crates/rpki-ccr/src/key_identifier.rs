@@ -55,6 +55,7 @@ impl KeyIdentifier {
         cons: &Constructed<S>,
         octets: &OctetString,
     ) -> Result<Self, DecodeError<S::Error>> {
+        // A 160-bit SHA-1 hash (RFC 6487 section 4.8.2; draft sections 3.4.1.1 and 3.4.4).
         Self::try_from(octets.to_bytes().as_ref())
             .map_err(|_| cons.content_err("key identifier must be exactly 20 octets"))
     }

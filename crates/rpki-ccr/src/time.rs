@@ -8,7 +8,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use crate::Error;
 
 /// The POSIX epoch, the value `mostRecentUpdate` must take when there are no
-/// manifest instances.
+/// manifest instances (draft section 3.4.1.2).
 pub(crate) const EPOCH: DateTime<Utc> = DateTime::UNIX_EPOCH;
 
 /// Takes a `GeneralizedTime` value from the constructed value.
@@ -20,7 +20,8 @@ pub(crate) fn take_generalized_time<S: Source>(
     })
 }
 
-/// Parses the DER form of GeneralizedTime restricted by RFC 5280: exactly
+/// Parses the DER form of GeneralizedTime (X.690 section 11.7) restricted by
+/// RFC 5280 section 4.1.2.5.2: exactly
 /// `YYYYMMDDHHMMSSZ`, no fractional seconds, no local offsets.
 pub(crate) fn parse_generalized_time(s: &[u8]) -> Result<DateTime<Utc>, &'static str> {
     if s.len() != 15 {

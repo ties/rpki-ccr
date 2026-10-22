@@ -39,6 +39,8 @@ impl TrustAnchorState {
         self.skis.is_empty()
     }
 
+    /// Decodes `TrustAnchorState` (draft section 3.4.4): `skis` and the digest
+    /// over the DER-encoded `skis`.
     pub(crate) fn take_from<S: Source>(
         cons: &mut Constructed<S>,
         hashed: &mut Vec<HashedPayload>,
@@ -53,6 +55,7 @@ impl TrustAnchorState {
                     Ok(())
                 })
             })?;
+            // skis SEQUENCE (SIZE(1..MAX)) (draft section 3).
             if skis.is_empty() {
                 return Err(cons.content_err("skis must contain at least one SubjectKeyIdentifier"));
             }
@@ -68,9 +71,10 @@ impl TrustAnchorState {
 }
 
 impl TrustAnchorState {
-    /// Builds a canonical state from at least one key identifier, sorted
-    /// and deduplicated.
+    /// Builds a canonical state from at least one key identifier, sorted as
+    /// unsigned 160-bit integers and deduplicated (draft section 3.4.4).
     pub fn new(skis: Vec<KeyIdentifier>) -> Result<Self, Error> {
+        // skis SEQUENCE (SIZE(1..MAX)) (draft section 3).
         if skis.is_empty() {
             return Err(Error::invalid(
                 "trust anchor state needs at least one key identifier",

@@ -174,17 +174,20 @@ fn inflate(_data: &[u8]) -> Result<Vec<u8>, Error> {
     Err(Error::GzipUnsupported)
 }
 
-/// Decodes the CMS `ContentInfo` wrapper and the CCR content.
+/// Decodes the CMS `ContentInfo` wrapper (draft section 2, RFC 5652 section 3)
+/// and the CCR content.
 fn parse(der: Bytes) -> Result<(Ccr, Vec<HashedPayload>), DecodeError<Infallible>> {
     let trailing = der_tlv_len(&der).is_some_and(|len| len < der.len());
     Mode::Der.decode(der, |cons| {
         // bcder does not check for input after a top-level value; a CCR file
-        // is exactly one ContentInfo.
+        // is exactly one ContentInfo (draft section 2).
         if trailing {
             return Err(cons.content_err("trailing data after the CMS ContentInfo"));
         }
         cons.take_sequence(|cons| {
             let content_type = Oid::take_from(cons)?;
+            // contentType MUST be id-ct-rpkiCanonicalCacheRepresentation,
+            // 1.2.840.113549.1.9.16.1.54 (draft section 2).
             if content_type != oid::CCR_CONTENT_TYPE {
                 return Err(cons.content_err(format!(
                     "unexpected CMS content type {content_type}, expected {}",
@@ -229,6 +232,8 @@ pub(crate) fn der_tlv_len(der: &[u8]) -> Option<usize> {
 fn parse_content<S: Source>(
     cons: &mut Constructed<S>,
 ) -> Result<(Ccr, Vec<HashedPayload>), DecodeError<S::Error>> {
+    // version [0] INTEGER DEFAULT 0 MUST be 0 (draft section 3.1); DER requires a
+    // DEFAULT value to be absent (X.690 section 11.5), as rpki-client enforces too.
     match cons.take_opt_constructed_if(Tag::CTX_0, |cons| cons.take_u64())? {
         None => {}
         Some(0) => {
@@ -242,6 +247,8 @@ fn parse_content<S: Source>(
     }
     cons.take_sequence(|cons| {
         let algorithm = Oid::take_from(cons)?;
+        // hashAlg MUST be id-sha256 with absent parameters (draft section 3.2,
+        // RFC 5754 section 2).
         if algorithm != oid::SHA256 {
             return Err(cons.content_err(format!("hashAlg must be id-sha256, found {algorithm}")));
         }
@@ -250,6 +257,7 @@ fn parse_content<S: Source>(
         }
         Ok(())
     })?;
+    // producedAt (draft section 3.3).
     let produced_at = take_generalized_time(cons)?;
 
     let mut hashed = Vec::new();
@@ -268,8 +276,11 @@ fn parse_content<S: Source>(
     let router_keys = cons.take_opt_constructed_if(Tag::CTX_5, |cons| {
         RouterKeyState::take_from(cons, &mut hashed)
     })?;
+    // The extension marker after rks (draft sections 3 and 3.4): tolerate future
+    // state aspects.
     let extensions = take_extensions(cons)?;
 
+    // At least one state aspect MUST be present (draft sections 3 and 3.4).
     if manifests.is_none()
         && roa_payloads.is_none()
         && aspa_payloads.is_none()
@@ -480,6 +491,7 @@ impl CcrBuilder {
     /// that the result passes strict validation.
     pub fn build(self) -> Result<Ccr, Error> {
         check_encodable(self.produced_at)?;
+        // At least one state aspect MUST be present (draft sections 3 and 3.4).
         if self.manifests.is_none()
             && self.roa_payloads.is_none()
             && self.aspa_payloads.is_none()

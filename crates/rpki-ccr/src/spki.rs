@@ -11,7 +11,8 @@ use bcder::encode::Values;
 use crate::Error;
 use crate::encode::RawDer;
 
-/// DER encoding of the `secp256r1` named-curve parameters.
+/// DER encoding of the `secp256r1` named-curve parameters (RFC 5480 section
+/// 2.1.1), the curve BGPsec router certificates use (RFC 8208 section 3.1).
 const SECP256R1_PARAMETERS: [u8; 10] = [0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
 
 /// A subject public key with its algorithm identifier.
@@ -59,6 +60,7 @@ impl SubjectPublicKeyInfo {
             && self.parameters.as_deref() == Some(&SECP256R1_PARAMETERS[..])
     }
 
+    /// Decodes `SubjectPublicKeyInfo` (RFC 5280 section 4.1.2.7).
     pub(crate) fn take_from<S: Source>(
         cons: &mut Constructed<S>,
     ) -> Result<Self, DecodeError<S::Error>> {
@@ -72,6 +74,7 @@ impl SubjectPublicKeyInfo {
                     Ok((algorithm, parameters))
                 })?;
                 let public_key = BitString::take_from(cons)?;
+                // Public keys are whole octets (RFC 5480 section 2.2, RFC 3279 section 2.3.1).
                 if public_key.unused() != 0 {
                     return Err(cons.content_err("subjectPublicKey must not have unused bits"));
                 }

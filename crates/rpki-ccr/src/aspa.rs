@@ -40,6 +40,8 @@ impl AspaPayloadState {
         self.sets.is_empty()
     }
 
+    /// Decodes `ASPAPayloadState` (draft section 3.4.3): `aps` and the digest
+    /// over the DER-encoded `aps`.
     pub(crate) fn take_from<S: Source>(
         cons: &mut Constructed<S>,
         hashed: &mut Vec<HashedPayload>,
@@ -95,6 +97,7 @@ impl AspaPayloadSet {
                 }
                 Ok(providers)
             })?;
+            // providers SEQUENCE (SIZE(1..MAX)) OF PAS (draft section 3).
             if providers.is_empty() {
                 return Err(cons.content_err("providers must contain at least one AS number"));
             }
@@ -108,7 +111,8 @@ impl AspaPayloadSet {
 
 impl AspaPayloadState {
     /// Builds a canonical state, merging the providers of sets with the same
-    /// customer AS.
+    /// customer AS (draft section 3.4.3: deduplicated and merged, ordered by
+    /// ascending `customerASID`).
     pub fn new(sets: Vec<AspaPayloadSet>) -> Result<Self, Error> {
         let mut by_customer: BTreeMap<Asn, Vec<Asn>> = BTreeMap::new();
         for set in sets {
@@ -144,8 +148,9 @@ impl AspaPayloadState {
 
 impl AspaPayloadSet {
     /// Creates a payload set with sorted, deduplicated providers. AS 0 is
-    /// only allowed as the sole provider.
+    /// only allowed as the sole provider (draft section 3.4.3).
     pub fn new(customer_as_id: Asn, providers: Vec<Asn>) -> Result<Self, Error> {
+        // providers SEQUENCE (SIZE(1..MAX)) OF PAS (draft section 3).
         if providers.is_empty() {
             return Err(Error::invalid(format!(
                 "ASPA payload set for customer AS {customer_as_id} needs at least one provider"

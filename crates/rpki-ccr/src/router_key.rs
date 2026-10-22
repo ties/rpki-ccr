@@ -47,6 +47,8 @@ impl RouterKeyState {
             .flat_map(|set| set.router_keys.iter().map(move |key| (set.as_id, key)))
     }
 
+    /// Decodes `RouterKeyState` (draft section 3.4.5): `rksets` and the digest
+    /// over the DER-encoded `rksets`.
     pub(crate) fn take_from<S: Source>(
         cons: &mut Constructed<S>,
         hashed: &mut Vec<HashedPayload>,
@@ -102,6 +104,7 @@ impl RouterKeySet {
                 }
                 Ok(keys)
             })?;
+            // routerKeys SEQUENCE (SIZE(1..MAX)) OF RouterKey (draft section 3).
             if router_keys.is_empty() {
                 return Err(cons.content_err("routerKeys must contain at least one RouterKey"));
             }
@@ -140,7 +143,8 @@ impl RouterKey {
 }
 
 impl RouterKeyState {
-    /// Builds a canonical state, merging sets with the same AS number.
+    /// Builds a canonical state, merging sets with the same AS number (draft
+    /// section 3.4.5: sets ascending by `asID`, unique).
     pub fn new(sets: Vec<RouterKeySet>) -> Result<Self, Error> {
         let mut by_asn: BTreeMap<Asn, Vec<RouterKey>> = BTreeMap::new();
         for set in sets {
@@ -170,9 +174,10 @@ impl RouterKeyState {
 }
 
 impl RouterKeySet {
-    /// Creates a router key set from at least one key, sorted by SKI with
-    /// duplicate SKIs removed.
+    /// Creates a router key set from at least one key, sorted by SKI as an
+    /// unsigned 160-bit integer with duplicate SKIs removed (draft section 3.4.5).
     pub fn new(as_id: Asn, router_keys: Vec<RouterKey>) -> Result<Self, Error> {
+        // routerKeys SEQUENCE (SIZE(1..MAX)) OF RouterKey (draft section 3).
         if router_keys.is_empty() {
             return Err(Error::invalid(format!(
                 "router key set for AS {as_id} needs at least one key"

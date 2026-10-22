@@ -47,6 +47,8 @@ impl ManifestNumber {
         cons: &mut Constructed<S>,
     ) -> Result<Self, DecodeError<S::Error>> {
         let value = Unsigned::take_from(cons)?;
+        // At most 20 octets (RFC 9286 section 4.2.1 via RFC 5280 section 4.1.2.2;
+        // draft section 6).
         if value.as_slice().len() > Self::MAX_LEN {
             return Err(cons.content_err("manifest number must fit in 20 octets"));
         }

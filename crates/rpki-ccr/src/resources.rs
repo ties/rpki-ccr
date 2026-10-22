@@ -94,6 +94,8 @@ impl Afi {
         cons: &mut Constructed<S>,
     ) -> Result<Self, DecodeError<S::Error>> {
         let octets = OctetString::take_from(cons)?;
+        // addressFamily is exactly two octets, 0001 or 0002; a SAFI octet is not
+        // allowed (RFC 9582 section 4.3.1).
         match octets.to_bytes().as_ref() {
             [0, 1] => Ok(Afi::Ipv4),
             [0, 2] => Ok(Afi::Ipv6),
@@ -150,7 +152,9 @@ impl Prefix {
         }
     }
 
-    /// Decodes an RFC 3779 `IPAddress` bit string in the given family.
+    /// Decodes an RFC 3779 `IPAddress` bit string in the given family
+    /// (RFC 3779 section 2.2.3.8: the prefix length is the number of bits and
+    /// unused bits must be zero; RFC 9582 section 4.3.2.1).
     pub(crate) fn from_bit_string(afi: Afi, bits: &BitString) -> Result<Self, &'static str> {
         let octets = bits.octet_bytes();
         let unused = bits.unused();
@@ -262,6 +266,8 @@ impl RoaIpAddress {
             let prefix = Prefix::from_bit_string(afi, &bits).map_err(|e| cons.content_err(e))?;
             let max_length = cons.take_opt_u8()?;
             if let Some(max) = max_length {
+                // maxLength MUST be at least the prefix length and at most the address
+                // length of the family (RFC 9582 section 4.3.2.2; draft section 6).
                 if max < prefix.length() {
                     return Err(
                         cons.content_err("maxLength must not be smaller than the prefix length")

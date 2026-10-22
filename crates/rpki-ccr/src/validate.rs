@@ -25,6 +25,9 @@ pub(crate) fn validate(
     options: &ValidationOptions,
 ) -> Result<(), Error> {
     if options.verify_hashes {
+        // Readers MUST verify each aspect's digest (draft section 5.1). The digest
+        // covers the DER-encoded mis / rps / aps / skis / rksets (sections 3.4.1.3,
+        // 3.4.2, 3.4.3, 3.4.4 and 3.4.5).
         for item in hashed {
             let computed = Digest::sha256(item.payload.as_slice());
             if computed != item.declared {
@@ -43,6 +46,8 @@ pub(crate) fn validate(
 /// encoding each present state's payload.
 pub(crate) fn validate_current(ccr: &Ccr, options: &ValidationOptions) -> Result<(), Error> {
     if options.verify_hashes {
+        // The same digests as in `validate` (draft sections 3.4.x and 5.1),
+        // recomputed from the current data.
         let check = |aspect: Aspect, declared: &Digest, computed: Digest| {
             if computed != *declared {
                 Err(Error::HashMismatch {
@@ -134,6 +139,7 @@ fn check_sorted<T, K: Ord>(
 
 fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
     if let Some(state) = ccr.manifests() {
+        // mis ascending by hash, unique (draft section 3.4.1.1).
         check_sorted(
             state.instances(),
             |i| *i.hash(),
@@ -143,6 +149,8 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
         for instance in state.instances() {
             // `locations` is deliberately not checked: the specification
             // defines no order or uniqueness for it (see ManifestInstance::new).
+            // subordinates ascending as unsigned 160-bit integers, unique (draft
+            // section 3.4.1.1).
             check_sorted(
                 instance.subordinates(),
                 |ski| *ski,
@@ -152,6 +160,7 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
         }
     }
     if let Some(state) = ccr.roa_payloads() {
+        // rps ascending by asID, unique (draft section 3.4.2).
         check_sorted(
             state.sets(),
             |set| set.as_id(),
@@ -159,6 +168,7 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
             "ROA payload set AS number",
         )?;
         for set in state.sets() {
+            // Each AFI at most once, IPv4 before IPv6 (RFC 9582 sections 4.3.1 and 4.3.3).
             check_sorted(
                 set.ip_addr_blocks(),
                 |b| b.afi(),
@@ -166,6 +176,8 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
                 "address family",
             )?;
             for family in set.ip_addr_blocks() {
+                // Addresses ascending by (prefix, maxLength), no duplicates (RFC 9582
+                // section 4.3.3).
                 check_sorted(
                     family.addresses(),
                     |a| (a.prefix(), a.effective_max_length()),
@@ -176,6 +188,7 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
         }
     }
     if let Some(state) = ccr.aspa_payloads() {
+        // aps ascending by customerASID, unique (draft section 3.4.3).
         check_sorted(
             state.sets(),
             |set| set.customer_as_id(),
@@ -183,6 +196,7 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
             "customer AS number",
         )?;
         for set in state.sets() {
+            // providers ascending and unique (draft section 3.4.3).
             check_sorted(
                 set.providers(),
                 |p| *p,
@@ -192,6 +206,7 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
         }
     }
     if let Some(state) = ccr.trust_anchors() {
+        // skis ascending as unsigned 160-bit integers (draft section 3.4.4).
         check_sorted(
             state.skis(),
             |ski| *ski,
@@ -200,6 +215,7 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
         )?;
     }
     if let Some(state) = ccr.router_keys() {
+        // rksets ascending by asID, unique (draft section 3.4.5).
         check_sorted(
             state.sets(),
             |set| set.as_id(),
@@ -207,6 +223,7 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
             "router key set AS number",
         )?;
         for set in state.sets() {
+            // routerKeys ascending by ski as unsigned 160-bit integers (draft section 3.4.5).
             check_sorted(
                 set.router_keys(),
                 |key| *key.ski(),
@@ -221,6 +238,8 @@ fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
 fn check_consistency(ccr: &Ccr) -> Result<(), Error> {
     if let Some(state) = ccr.manifests() {
         let newest = state.instances().iter().map(|i| i.this_update()).max();
+        // mostRecentUpdate is the most recent thisUpdate, or the POSIX epoch when
+        // mis is empty (draft section 3.4.1.2).
         let expected = newest.unwrap_or(EPOCH);
         if state.most_recent_update() != expected {
             let detail = match newest {
@@ -239,6 +258,8 @@ fn check_consistency(ccr: &Ccr) -> Result<(), Error> {
                 detail,
             });
         }
+        // mostRecentUpdate MUST precede or equal producedAt (draft section 3.4.1.2,
+        // following RFC 9286 section 6.3).
         if state.most_recent_update() > ccr.produced_at() {
             return Err(Error::Consistency {
                 aspect: Aspect::Manifests,
@@ -252,6 +273,7 @@ fn check_consistency(ccr: &Ccr) -> Result<(), Error> {
     }
     if let Some(state) = ccr.aspa_payloads() {
         for set in state.sets() {
+            // AS 0 only as a single-item provider list (draft section 3.4.3).
             if set.providers().len() > 1 && set.providers().contains(&Asn::new(0)) {
                 return Err(Error::Consistency {
                     aspect: Aspect::AspaPayloads,

@@ -44,6 +44,9 @@ impl AccessDescription {
         self.access_method == oid::SIGNED_OBJECT
     }
 
+    /// Decodes `AccessDescription` (RFC 5280 section 4.2.2.1) with the
+    /// `uniformResourceIdentifier` form of `GeneralName` that RFC 6487 section
+    /// 4.8 requires for RPKI certificates.
     pub(crate) fn take_opt_from<S: Source>(
         cons: &mut Constructed<S>,
     ) -> Result<Option<Self>, DecodeError<S::Error>> {
