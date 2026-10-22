@@ -15,6 +15,12 @@ use crate::{
     AspaPayloadState, DecodeOptions, Error, ManifestState, RoaPayloadState, RouterKeyState,
     TrustAnchorState, oid,
 };
+use std::io;
+
+use bcder::encode::{self, PrimitiveContent as _, Values};
+
+use crate::encode::{GeneralizedTime, RawDer};
+use crate::time::check_encodable;
 
 /// The digest algorithm of a CCR. Only SHA-256 is defined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -189,7 +195,7 @@ fn parse(der: Bytes) -> Result<(Ccr, Vec<HashedPayload>), DecodeError<Infallible
 
 /// Returns the total length of the DER TLV at the start of `der`, or `None`
 /// if the header is malformed (bcder reports those errors itself).
-fn der_tlv_len(der: &[u8]) -> Option<usize> {
+pub(crate) fn der_tlv_len(der: &[u8]) -> Option<usize> {
     let mut i = 0;
     if der.first()? & 0x1f == 0x1f {
         while der.get(i + 1)? & 0x80 != 0 {
@@ -317,6 +323,137 @@ fn take_extensions<S: Source>(
         extensions.push(captured.into_bytes());
     }
     Ok(extensions)
+}
+
+impl Ccr {
+    /// Starts building a CCR finalized at `produced_at`.
+    pub fn builder(produced_at: DateTime<Utc>) -> CcrBuilder {
+        CcrBuilder {
+            produced_at,
+            manifests: None,
+            roa_payloads: None,
+            aspa_payloads: None,
+            trust_anchors: None,
+            router_keys: None,
+        }
+    }
+
+    /// Returns a DER encoder for the complete CMS `ContentInfo`.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((
+            oid::CCR_CONTENT_TYPE.encode(),
+            encode::sequence_as(
+                Tag::CTX_0,
+                encode::sequence((
+                    encode::sequence(oid::SHA256.encode()),
+                    GeneralizedTime(self.produced_at).encode(),
+                    self.manifests
+                        .as_ref()
+                        .map(|state| encode::sequence_as(Tag::CTX_1, state.encode_ref())),
+                    self.roa_payloads
+                        .as_ref()
+                        .map(|state| encode::sequence_as(Tag::CTX_2, state.encode_ref())),
+                    self.aspa_payloads
+                        .as_ref()
+                        .map(|state| encode::sequence_as(Tag::CTX_3, state.encode_ref())),
+                    self.trust_anchors
+                        .as_ref()
+                        .map(|state| encode::sequence_as(Tag::CTX_4, state.encode_ref())),
+                    self.router_keys
+                        .as_ref()
+                        .map(|state| encode::sequence_as(Tag::CTX_5, state.encode_ref())),
+                    encode::iter(self.extensions.iter().map(|ext| RawDer(ext.as_ref()))),
+                )),
+            ),
+        ))
+    }
+
+    /// Encodes the CCR as DER.
+    pub fn to_der(&self) -> Bytes {
+        self.encode_ref().to_captured(Mode::Der).into_bytes()
+    }
+
+    /// Writes the DER encoding to `target`.
+    pub fn write_der<W: io::Write>(&self, target: &mut W) -> io::Result<()> {
+        self.encode_ref().write_encoded(Mode::Der, target)
+    }
+
+    /// Encodes the CCR as gzip-compressed DER (`application/rpki-ccr+gzip`).
+    #[cfg(feature = "gzip")]
+    pub fn to_der_gzip(&self) -> io::Result<Vec<u8>> {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        self.write_der(&mut encoder)?;
+        encoder.finish()
+    }
+}
+
+/// Builds a [`Ccr`] from state aspects constructed with the canonicalising
+/// constructors of the state types.
+#[derive(Clone, Debug)]
+pub struct CcrBuilder {
+    produced_at: DateTime<Utc>,
+    manifests: Option<ManifestState>,
+    roa_payloads: Option<RoaPayloadState>,
+    aspa_payloads: Option<AspaPayloadState>,
+    trust_anchors: Option<TrustAnchorState>,
+    router_keys: Option<RouterKeyState>,
+}
+
+impl CcrBuilder {
+    /// Sets the manifest state (`mfts`).
+    pub fn manifests(mut self, state: ManifestState) -> Self {
+        self.manifests = Some(state);
+        self
+    }
+
+    /// Sets the ROA payload state (`vrps`).
+    pub fn roa_payloads(mut self, state: RoaPayloadState) -> Self {
+        self.roa_payloads = Some(state);
+        self
+    }
+
+    /// Sets the ASPA payload state (`vaps`).
+    pub fn aspa_payloads(mut self, state: AspaPayloadState) -> Self {
+        self.aspa_payloads = Some(state);
+        self
+    }
+
+    /// Sets the trust anchor state (`tas`).
+    pub fn trust_anchors(mut self, state: TrustAnchorState) -> Self {
+        self.trust_anchors = Some(state);
+        self
+    }
+
+    /// Sets the router key state (`rks`).
+    pub fn router_keys(mut self, state: RouterKeyState) -> Self {
+        self.router_keys = Some(state);
+        self
+    }
+
+    /// Builds the CCR, verifying that at least one aspect is present and
+    /// that the result passes strict validation.
+    pub fn build(self) -> Result<Ccr, Error> {
+        check_encodable(self.produced_at)?;
+        if self.manifests.is_none()
+            && self.roa_payloads.is_none()
+            && self.aspa_payloads.is_none()
+            && self.trust_anchors.is_none()
+            && self.router_keys.is_none()
+        {
+            return Err(Error::invalid("a CCR needs at least one state aspect"));
+        }
+        let ccr = Ccr {
+            produced_at: self.produced_at,
+            manifests: self.manifests,
+            roa_payloads: self.roa_payloads,
+            aspa_payloads: self.aspa_payloads,
+            trust_anchors: self.trust_anchors,
+            router_keys: self.router_keys,
+            extensions: Vec::new(),
+        };
+        validate::validate(&ccr, &[], &DecodeOptions::strict())?;
+        Ok(ccr)
+    }
 }
 
 #[cfg(test)]

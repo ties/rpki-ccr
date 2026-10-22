@@ -25,6 +25,29 @@
 //! }
 //! ```
 //!
+//! A `Ccr` re-encodes byte-for-byte with [`Ccr::to_der`]. New files are
+//! built from the canonicalising constructors of the state types and
+//! [`Ccr::builder`]:
+//!
+//! ```
+//! use chrono::{TimeZone, Utc};
+//! use rpki_ccr::{Asn, Ccr, KeyIdentifier, RoaPayloadState, TrustAnchorState, Vrp};
+//!
+//! let vrps = RoaPayloadState::from_vrps([
+//!     Vrp::new(Asn::new(65536), "198.51.100.0/24".parse().unwrap(), 28).unwrap(),
+//!     Vrp::new(Asn::new(65536), "2001:db8::/48".parse().unwrap(), 48).unwrap(),
+//! ]);
+//! let ski = KeyIdentifier::from_hex("25f8ccfcefc046d8dcd00fc0e444e0aa7b790f96").unwrap();
+//! let tas = TrustAnchorState::new(vec![ski]).unwrap();
+//! let ccr = Ccr::builder(Utc.with_ymd_and_hms(2026, 5, 15, 0, 0, 10).unwrap())
+//!     .roa_payloads(vrps)
+//!     .trust_anchors(tas)
+//!     .build()
+//!     .unwrap();
+//! let der = ccr.to_der();
+//! assert_eq!(Ccr::decode(&der).unwrap(), ccr);
+//! ```
+//!
 //! # Features
 //!
 //! * `gzip` (default): transparently inflate gzip-compressed CCR files
@@ -37,6 +60,7 @@ mod access;
 mod aspa;
 mod ccr;
 mod digest;
+mod encode;
 mod error;
 mod hex;
 mod key_identifier;
@@ -54,7 +78,7 @@ mod validate;
 
 pub use access::AccessDescription;
 pub use aspa::{AspaPayloadSet, AspaPayloadState};
-pub use ccr::{Ccr, HashAlgorithm};
+pub use ccr::{Ccr, CcrBuilder, HashAlgorithm};
 pub use digest::Digest;
 pub use error::{Aspect, Error};
 pub use key_identifier::KeyIdentifier;

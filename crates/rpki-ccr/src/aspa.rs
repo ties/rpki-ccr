@@ -5,6 +5,12 @@ use bcder::decode::{Constructed, DecodeError, Source};
 use crate::error::Aspect;
 use crate::validate::HashedPayload;
 use crate::{Asn, Digest};
+use std::collections::BTreeMap;
+
+use bcder::encode::{self, Values};
+
+use crate::Error;
+use crate::encode::{digest_of, sort_dedup_by_key};
 
 /// The current set of deduplicated and merged ASPA payloads.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -97,5 +103,71 @@ impl AspaPayloadSet {
                 providers,
             })
         })
+    }
+}
+
+impl AspaPayloadState {
+    /// Builds a canonical state, merging the providers of sets with the same
+    /// customer AS.
+    pub fn new(sets: Vec<AspaPayloadSet>) -> Result<Self, Error> {
+        let mut by_customer: BTreeMap<Asn, Vec<Asn>> = BTreeMap::new();
+        for set in sets {
+            by_customer
+                .entry(set.customer_as_id)
+                .or_default()
+                .extend(set.providers);
+        }
+        let sets = by_customer
+            .into_iter()
+            .map(|(customer, providers)| AspaPayloadSet::new(customer, providers))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut state = AspaPayloadState {
+            sets,
+            hash: Digest::from([0; 32]),
+        };
+        let hash = digest_of(&state.encode_payload());
+        state.hash = hash;
+        Ok(state)
+    }
+
+    fn encode_payload(&self) -> impl Values + '_ {
+        encode::sequence(encode::iter(
+            self.sets.iter().map(AspaPayloadSet::encode_ref),
+        ))
+    }
+
+    /// Returns a DER encoder for the `ASPAPayloadState` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((self.encode_payload(), self.hash.encode_ref()))
+    }
+}
+
+impl AspaPayloadSet {
+    /// Creates a payload set with sorted, deduplicated providers. AS 0 is
+    /// only allowed as the sole provider.
+    pub fn new(customer_as_id: Asn, providers: Vec<Asn>) -> Result<Self, Error> {
+        if providers.is_empty() {
+            return Err(Error::invalid(format!(
+                "ASPA payload set for customer AS {customer_as_id} needs at least one provider"
+            )));
+        }
+        let providers = sort_dedup_by_key(providers, |provider| *provider);
+        if providers.len() > 1 && providers[0] == Asn::new(0) {
+            return Err(Error::invalid(format!(
+                "customer AS {customer_as_id} lists AS 0 together with other providers"
+            )));
+        }
+        Ok(AspaPayloadSet {
+            customer_as_id,
+            providers,
+        })
+    }
+
+    /// Returns a DER encoder for the `ASPAPayloadSet` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((
+            self.customer_as_id.encode_ref(),
+            encode::sequence(encode::iter(self.providers.iter().map(Asn::encode_ref))),
+        ))
     }
 }

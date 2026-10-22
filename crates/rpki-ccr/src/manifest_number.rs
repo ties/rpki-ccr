@@ -8,6 +8,10 @@ use bcder::decode::{Constructed, DecodeError, Source};
 use bytes::Bytes;
 
 use crate::hex;
+use std::io;
+
+use bcder::encode::{PrimitiveContent, Values};
+use bcder::{Mode, Tag};
 
 /// A manifest number: a non-negative integer of at most 20 octets
 /// (RFC 9286 section 4.2.1, RFC 5280 section 4.1.2.2).
@@ -97,6 +101,38 @@ impl fmt::Display for ManifestNumber {
 impl fmt::Debug for ManifestNumber {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ManifestNumber({self})")
+    }
+}
+
+impl ManifestNumber {
+    /// Returns a DER encoder for the manifest number as an `INTEGER`.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        ManifestNumberContent(&self.0).encode()
+    }
+}
+
+/// The DER content of a manifest number: the magnitude, preceded by a zero
+/// octet when its top bit is set.
+struct ManifestNumberContent<'a>(&'a [u8]);
+
+impl ManifestNumberContent<'_> {
+    fn needs_sign_octet(&self) -> bool {
+        self.0.first().is_some_and(|first| first & 0x80 != 0)
+    }
+}
+
+impl PrimitiveContent for ManifestNumberContent<'_> {
+    const TAG: Tag = Tag::INTEGER;
+
+    fn encoded_len(&self, _: Mode) -> usize {
+        self.0.len() + usize::from(self.needs_sign_octet())
+    }
+
+    fn write_encoded<W: io::Write>(&self, _: Mode, target: &mut W) -> Result<(), io::Error> {
+        if self.needs_sign_octet() {
+            target.write_all(&[0])?;
+        }
+        target.write_all(self.0)
     }
 }
 

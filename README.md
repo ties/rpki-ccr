@@ -63,6 +63,31 @@ let ccr = Ccr::decode_with(&data, &DecodeOptions::lenient())?;
 Unknown future state aspects (context tags above `[5]`) are tolerated and
 exposed verbatim through `Ccr::extensions`.
 
+## Encoding
+
+A decoded `Ccr` re-encodes byte-for-byte (`encode(decode(x)) == x` holds for
+the specification's test vector and for rpki-client output). New files are
+built with the canonicalising constructors, which sort, deduplicate and merge
+their input and compute the state digests, and with `Ccr::builder`, which
+runs the same strict validation as the decoder:
+
+```rust
+use chrono::Timelike as _;
+use rpki_ccr::{Asn, Ccr, KeyIdentifier, RoaPayloadState, TrustAnchorState, Vrp};
+
+let vrps = RoaPayloadState::from_vrps([
+    Vrp::new(Asn::new(65536), "198.51.100.0/24".parse()?, 28).unwrap(),
+    Vrp::new(Asn::new(65536), "2001:db8::/48".parse()?, 48).unwrap(),
+]);
+let tas = TrustAnchorState::new(vec![KeyIdentifier::from_hex("25f8ccfcefc046d8dcd00fc0e444e0aa7b790f96").unwrap()])?;
+let produced_at = chrono::Utc::now().with_nanosecond(0).unwrap(); // whole seconds only
+let ccr = Ccr::builder(produced_at).roa_payloads(vrps).trust_anchors(tas).build()?;
+let der = ccr.to_der();            // or write_der(&mut file), to_der_gzip()
+```
+
+Manifest instances keep their `locations` in the given order; everything
+the specification orders is sorted by the constructors.
+
 ## Example: `ccr-dump`
 
 Prints a file in the textual format of the specification's Appendix B and of
@@ -79,11 +104,11 @@ cargo run --example ccr-dump -- --lenient broken.ccr.gz
 
 ## Roadmap
 
-1. Parsing and validation (this crate).
-2. DER encoding: canonical ordering, digest computation and a round-trip test
-   against the specification's test vector. The encoder will also be used to
-   generate a fixture whose manifest instances carry multiple
-   `AccessDescription`s, which the Appendix B vector lacks.
+1. Parsing and validation. Done.
+2. DER encoding with canonicalising constructors and a builder, round-trip
+   tests against the specification's test vector and rpki-client output, and
+   a generated fixture (`tests/data/multi-location.ccr`) whose manifest
+   instances carry multiple `AccessDescription`s. Done.
 3. Python bindings in `crates/rpki-ccr-py` (pyo3 + maturin), modelled on
    [rpki-rs-py](https://github.com/ties/rpki-rs-py).
 
@@ -94,6 +119,8 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 cargo test -p rpki-ccr --no-default-features
+RPKI_CCR_ROUNDTRIP_FILE=rpki.ccr cargo test --release --test encode -- --ignored   # round-trip any file
+RPKI_CCR_WRITE_FIXTURES=1 cargo test --test encode                                  # regenerate generated fixtures
 ```
 
 The minimum supported Rust version is 1.85 (edition 2024).

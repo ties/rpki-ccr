@@ -7,6 +7,7 @@ use bcder::decode::{Constructed, DecodeError, Source};
 use sha2::Digest as _;
 
 use crate::hex;
+use bcder::encode::Values;
 
 /// A SHA-256 message digest.
 ///
@@ -77,6 +78,13 @@ impl fmt::Display for Digest {
 impl fmt::Debug for Digest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Digest({self})")
+    }
+}
+
+impl Digest {
+    /// Returns a DER encoder for the digest as an `OCTET STRING`.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        OctetString::encode_slice(&self.0[..])
     }
 }
 

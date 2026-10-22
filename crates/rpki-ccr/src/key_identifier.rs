@@ -6,6 +6,7 @@ use bcder::OctetString;
 use bcder::decode::{Constructed, DecodeError, Source};
 
 use crate::hex;
+use bcder::encode::Values;
 
 /// A 160-bit key identifier (RFC 6487 section 4.8.2): the SHA-1 hash of a
 /// certificate's subject public key.
@@ -88,6 +89,13 @@ impl fmt::Display for KeyIdentifier {
 impl fmt::Debug for KeyIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "KeyIdentifier({self})")
+    }
+}
+
+impl KeyIdentifier {
+    /// Returns a DER encoder for the key identifier as an `OCTET STRING`.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        OctetString::encode_slice(&self.0[..])
     }
 }
 

@@ -103,4 +103,19 @@ pub enum Error {
         /// Human-readable description.
         detail: String,
     },
+
+    /// A value given to a constructor or builder violates the specification.
+    #[error("invalid value: {detail}")]
+    InvalidValue {
+        /// Human-readable description.
+        detail: String,
+    },
+}
+
+impl Error {
+    pub(crate) fn invalid(detail: impl Into<String>) -> Self {
+        Error::InvalidValue {
+            detail: detail.into(),
+        }
+    }
 }

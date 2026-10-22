@@ -5,6 +5,12 @@ use bcder::decode::{Constructed, DecodeError, Source};
 use crate::error::Aspect;
 use crate::validate::HashedPayload;
 use crate::{Asn, Digest, KeyIdentifier, SubjectPublicKeyInfo};
+use std::collections::BTreeMap;
+
+use bcder::encode::{self, Values};
+
+use crate::Error;
+use crate::encode::{digest_of, sort_dedup_by_key};
 
 /// The current set of valid BGPsec router keys, grouped by AS.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -130,5 +136,73 @@ impl RouterKey {
             let spki = SubjectPublicKeyInfo::take_from(cons)?;
             Ok(RouterKey { ski, spki })
         })
+    }
+}
+
+impl RouterKeyState {
+    /// Builds a canonical state, merging sets with the same AS number.
+    pub fn new(sets: Vec<RouterKeySet>) -> Result<Self, Error> {
+        let mut by_asn: BTreeMap<Asn, Vec<RouterKey>> = BTreeMap::new();
+        for set in sets {
+            by_asn.entry(set.as_id).or_default().extend(set.router_keys);
+        }
+        let sets = by_asn
+            .into_iter()
+            .map(|(as_id, keys)| RouterKeySet::new(as_id, keys))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut state = RouterKeyState {
+            sets,
+            hash: Digest::from([0; 32]),
+        };
+        let hash = digest_of(&state.encode_payload());
+        state.hash = hash;
+        Ok(state)
+    }
+
+    fn encode_payload(&self) -> impl Values + '_ {
+        encode::sequence(encode::iter(self.sets.iter().map(RouterKeySet::encode_ref)))
+    }
+
+    /// Returns a DER encoder for the `RouterKeyState` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((self.encode_payload(), self.hash.encode_ref()))
+    }
+}
+
+impl RouterKeySet {
+    /// Creates a router key set from at least one key, sorted by SKI with
+    /// duplicate SKIs removed.
+    pub fn new(as_id: Asn, router_keys: Vec<RouterKey>) -> Result<Self, Error> {
+        if router_keys.is_empty() {
+            return Err(Error::invalid(format!(
+                "router key set for AS {as_id} needs at least one key"
+            )));
+        }
+        Ok(RouterKeySet {
+            as_id,
+            router_keys: sort_dedup_by_key(router_keys, |key| *key.ski()),
+        })
+    }
+
+    /// Returns a DER encoder for the `RouterKeySet` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((
+            self.as_id.encode_ref(),
+            encode::sequence(encode::iter(
+                self.router_keys.iter().map(RouterKey::encode_ref),
+            )),
+        ))
+    }
+}
+
+impl RouterKey {
+    /// Creates a router key.
+    pub fn new(ski: KeyIdentifier, spki: SubjectPublicKeyInfo) -> Self {
+        RouterKey { ski, spki }
+    }
+
+    /// Returns a DER encoder for the `RouterKey` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((self.ski.encode_ref(), self.spki.encode_ref()))
     }
 }

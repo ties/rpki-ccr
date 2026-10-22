@@ -5,6 +5,9 @@ use bcder::{Ia5String, Oid, Tag};
 use bytes::Bytes;
 
 use crate::oid;
+use bcder::encode::{self, PrimitiveContent as _, Values};
+
+use crate::Error;
 
 /// An `AccessDescription`: an access method OID and a URI.
 ///
@@ -46,5 +49,35 @@ impl AccessDescription {
             }
             Ok(AccessDescription { access_method, uri })
         })
+    }
+}
+
+impl AccessDescription {
+    /// Creates an access description. The URI must be a non-empty
+    /// `IA5String` (ASCII).
+    pub fn new(access_method: Oid<Bytes>, uri: impl Into<String>) -> Result<Self, Error> {
+        let uri = uri.into();
+        if uri.is_empty() {
+            return Err(Error::invalid("accessLocation URI must not be empty"));
+        }
+        if !uri.is_ascii() {
+            return Err(Error::invalid(format!(
+                "accessLocation URI {uri:?} is not an IA5String"
+            )));
+        }
+        Ok(AccessDescription { access_method, uri })
+    }
+
+    /// Creates an `id-ad-signedObject` access description.
+    pub fn signed_object(uri: impl Into<String>) -> Result<Self, Error> {
+        Self::new(Oid(Bytes::from_static(oid::SIGNED_OBJECT.0)), uri)
+    }
+
+    /// Returns a DER encoder for the `AccessDescription` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((
+            self.access_method.encode_ref(),
+            bcder::OctetString::encode_slice_as(self.uri.as_bytes(), Tag::CTX_6),
+        ))
     }
 }

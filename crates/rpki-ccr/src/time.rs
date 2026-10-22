@@ -2,7 +2,10 @@
 
 use bcder::Tag;
 use bcder::decode::{Constructed, DecodeError, Source};
+use chrono::Datelike as _;
 use chrono::{DateTime, NaiveDate, Utc};
+
+use crate::Error;
 
 /// The POSIX epoch, the value `mostRecentUpdate` must take when there are no
 /// manifest instances.
@@ -38,6 +41,22 @@ pub(crate) fn parse_generalized_time(s: &[u8]) -> Result<DateTime<Utc>, &'static
         .and_then(|date| date.and_hms_opt(num(8..10), num(10..12), num(12..14)))
         .map(|naive| naive.and_utc())
         .ok_or("GeneralizedTime is not a valid date and time")
+}
+
+/// Checks that `time` can be encoded as a `GeneralizedTime`: a year between
+/// 0 and 9999 and no sub-second part.
+pub(crate) fn check_encodable(time: DateTime<Utc>) -> Result<(), Error> {
+    if !(0..=9999).contains(&time.year()) {
+        return Err(Error::invalid(format!(
+            "{time} cannot be encoded as GeneralizedTime"
+        )));
+    }
+    if time.timestamp_subsec_nanos() != 0 {
+        return Err(Error::invalid(format!(
+            "{time} has a fractional second, which GeneralizedTime cannot represent here"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

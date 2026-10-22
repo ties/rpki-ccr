@@ -7,6 +7,11 @@ use crate::error::Aspect;
 use crate::time::take_generalized_time;
 use crate::validate::HashedPayload;
 use crate::{AccessDescription, Digest, KeyIdentifier, ManifestNumber};
+use bcder::encode::{self, PrimitiveContent as _, Values};
+
+use crate::Error;
+use crate::encode::{GeneralizedTime, digest_of, sort_dedup_by_key};
+use crate::time::{EPOCH, check_encodable};
 
 /// The set of valid, current manifests in the cache.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -172,5 +177,96 @@ impl ManifestInstance {
                 subordinates,
             })
         })
+    }
+}
+
+impl ManifestState {
+    /// Builds a canonical manifest state: instances sorted by hash with
+    /// duplicates removed, `mostRecentUpdate` derived from the instances and
+    /// the digest computed over the DER-encoded `mis` sequence.
+    pub fn new(instances: Vec<ManifestInstance>) -> Self {
+        let instances = sort_dedup_by_key(instances, |instance| *instance.hash());
+        let most_recent_update = instances
+            .iter()
+            .map(ManifestInstance::this_update)
+            .max()
+            .unwrap_or(EPOCH);
+        let mut state = ManifestState {
+            instances,
+            most_recent_update,
+            hash: Digest::from([0; 32]),
+        };
+        let hash = digest_of(&state.encode_payload());
+        state.hash = hash;
+        state
+    }
+
+    fn encode_payload(&self) -> impl Values + '_ {
+        encode::sequence(encode::iter(
+            self.instances.iter().map(ManifestInstance::encode_ref),
+        ))
+    }
+
+    /// Returns a DER encoder for the `ManifestState` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((
+            self.encode_payload(),
+            GeneralizedTime(self.most_recent_update).encode(),
+            self.hash.encode_ref(),
+        ))
+    }
+}
+
+impl ManifestInstance {
+    /// Creates a manifest instance. Subordinates are sorted and deduplicated;
+    /// locations keep the given order.
+    pub fn new(
+        hash: Digest,
+        size: u64,
+        aki: KeyIdentifier,
+        manifest_number: ManifestNumber,
+        this_update: DateTime<Utc>,
+        locations: Vec<AccessDescription>,
+        subordinates: Vec<KeyIdentifier>,
+    ) -> Result<Self, Error> {
+        if size < 1000 {
+            return Err(Error::invalid(format!(
+                "manifest size {size} is below the minimum of 1000 octets"
+            )));
+        }
+        if locations.is_empty() {
+            return Err(Error::invalid(
+                "a manifest instance needs at least one location",
+            ));
+        }
+        check_encodable(this_update)?;
+        Ok(ManifestInstance {
+            hash,
+            size,
+            aki,
+            manifest_number,
+            this_update,
+            locations,
+            subordinates: sort_dedup_by_key(subordinates, |ski| *ski),
+        })
+    }
+
+    /// Returns a DER encoder for the `ManifestInstance` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((
+            self.hash.encode_ref(),
+            self.size.encode(),
+            self.aki.encode_ref(),
+            self.manifest_number.encode_ref(),
+            GeneralizedTime(self.this_update).encode(),
+            encode::sequence(encode::iter(
+                self.locations.iter().map(AccessDescription::encode_ref),
+            )),
+            (!self.subordinates.is_empty()).then(|| {
+                encode::sequence(encode::iter(
+                    self.subordinates.iter().map(KeyIdentifier::encode_ref),
+                ))
+            }),
+        ))
     }
 }

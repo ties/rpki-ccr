@@ -5,6 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
 use bcder::decode::{Constructed, DecodeError, Source};
+use bcder::encode::{self, PrimitiveContent as _, Values};
 use bcder::{BitString, OctetString};
 
 /// An autonomous system number.
@@ -346,6 +347,87 @@ impl fmt::Display for Vrp {
             write!(f, "-{}", self.max_length)?;
         }
         write!(f, " AS {}", self.asn)
+    }
+}
+
+impl Asn {
+    /// Returns a DER encoder for the AS number as an `INTEGER`.
+    pub fn encode_ref(&self) -> impl Values {
+        self.0.encode()
+    }
+}
+
+impl Afi {
+    /// Returns a DER encoder for the two-octet `addressFamily` string.
+    pub fn encode_ref(&self) -> impl Values {
+        OctetString::encode_slice(self.octets())
+    }
+}
+
+/// The octets of a prefix's address that carry prefix bits.
+struct PrefixOctets {
+    buf: [u8; 16],
+    len: usize,
+}
+
+impl AsRef<[u8]> for PrefixOctets {
+    fn as_ref(&self) -> &[u8] {
+        &self.buf[..self.len]
+    }
+}
+
+impl Prefix {
+    /// Returns a DER encoder for the prefix as an RFC 3779 `IPAddress`
+    /// bit string.
+    pub fn encode_ref(&self) -> impl Values {
+        let mut buf = [0u8; 16];
+        match self.addr {
+            IpAddr::V4(a) => buf[..4].copy_from_slice(&a.octets()),
+            IpAddr::V6(a) => buf.copy_from_slice(&a.octets()),
+        }
+        let len = usize::from(self.len).div_ceil(8);
+        let unused = (len * 8 - usize::from(self.len)) as u8;
+        BitString::encode_slice(PrefixOctets { buf, len }, unused)
+    }
+}
+
+impl RoaIpAddress {
+    /// Returns the canonical form: `maxLength` omitted when it equals the
+    /// prefix length (RFC 9582 section 4.3.2.2).
+    pub fn canonical(self) -> Self {
+        RoaIpAddress {
+            prefix: self.prefix,
+            max_length: self.max_length.filter(|&max| max != self.prefix.length()),
+        }
+    }
+
+    /// Returns a DER encoder for the `ROAIPAddress` sequence.
+    pub fn encode_ref(&self) -> impl Values {
+        encode::sequence((
+            self.prefix.encode_ref(),
+            self.max_length.map(|max| max.encode()),
+        ))
+    }
+}
+
+impl Vrp {
+    /// The VRP as a canonical `ROAIPAddress`.
+    pub fn address(&self) -> RoaIpAddress {
+        RoaIpAddress {
+            prefix: self.prefix,
+            max_length: None,
+        }
+        .with_max_length(self.max_length)
+    }
+}
+
+impl RoaIpAddress {
+    fn with_max_length(self, max_length: u8) -> Self {
+        RoaIpAddress {
+            prefix: self.prefix,
+            max_length: Some(max_length),
+        }
+        .canonical()
     }
 }
 

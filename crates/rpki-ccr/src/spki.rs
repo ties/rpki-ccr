@@ -5,6 +5,11 @@ use bcder::{BitString, Oid};
 use bytes::Bytes;
 
 use crate::oid;
+use bcder::Mode;
+use bcder::encode::Values;
+
+use crate::Error;
+use crate::encode::RawDer;
 
 /// DER encoding of the `secp256r1` named-curve parameters.
 const SECP256R1_PARAMETERS: [u8; 10] = [0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
@@ -82,5 +87,20 @@ impl SubjectPublicKeyInfo {
             parameters,
             public_key,
         })
+    }
+}
+
+impl SubjectPublicKeyInfo {
+    /// Parses a DER-encoded `SubjectPublicKeyInfo`.
+    pub fn from_der(der: &[u8]) -> Result<Self, Error> {
+        if crate::ccr::der_tlv_len(der).is_some_and(|len| len < der.len()) {
+            return Err(Error::invalid("trailing data after SubjectPublicKeyInfo"));
+        }
+        Ok(Mode::Der.decode(Bytes::copy_from_slice(der), Self::take_from)?)
+    }
+
+    /// Returns a DER encoder that emits the stored encoding verbatim.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        RawDer(&self.der)
     }
 }

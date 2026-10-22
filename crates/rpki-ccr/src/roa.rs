@@ -5,6 +5,12 @@ use bcder::decode::{Constructed, DecodeError, Source};
 use crate::error::Aspect;
 use crate::validate::HashedPayload;
 use crate::{Afi, Asn, Digest, RoaIpAddress, Vrp};
+use std::collections::BTreeMap;
+
+use bcder::encode::{self, Values};
+
+use crate::Error;
+use crate::encode::{digest_of, sort_dedup_by_key};
 
 /// The current set of Validated ROA Payloads, grouped by origin AS.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -152,5 +158,117 @@ impl RoaIpAddressFamily {
             }
             Ok(RoaIpAddressFamily { afi, addresses })
         })
+    }
+}
+
+impl RoaPayloadState {
+    /// Builds a canonical state from VRPs: grouped by AS number, split by
+    /// address family, sorted, deduplicated, with `maxLength` omitted when
+    /// it equals the prefix length.
+    pub fn from_vrps(vrps: impl IntoIterator<Item = Vrp>) -> Self {
+        Self::from_addresses(vrps.into_iter().map(|vrp| (vrp.asn(), vrp.address())))
+    }
+
+    /// Builds a canonical state from payload sets, merging sets with the
+    /// same AS number.
+    pub fn new(sets: Vec<RoaPayloadSet>) -> Self {
+        Self::from_addresses(sets.into_iter().flat_map(|set| {
+            let as_id = set.as_id;
+            set.ip_addr_blocks.into_iter().flat_map(move |family| {
+                family
+                    .addresses
+                    .into_iter()
+                    .map(move |address| (as_id, address))
+            })
+        }))
+    }
+
+    fn from_addresses(items: impl IntoIterator<Item = (Asn, RoaIpAddress)>) -> Self {
+        let mut by_asn: BTreeMap<Asn, Vec<RoaIpAddress>> = BTreeMap::new();
+        for (as_id, address) in items {
+            by_asn.entry(as_id).or_default().push(address);
+        }
+        let sets = by_asn
+            .into_iter()
+            .map(|(as_id, addresses)| RoaPayloadSet::canonical(as_id, addresses))
+            .collect();
+        let mut state = RoaPayloadState {
+            sets,
+            hash: Digest::from([0; 32]),
+        };
+        let hash = digest_of(&state.encode_payload());
+        state.hash = hash;
+        state
+    }
+
+    fn encode_payload(&self) -> impl Values + '_ {
+        encode::sequence(encode::iter(
+            self.sets.iter().map(RoaPayloadSet::encode_ref),
+        ))
+    }
+
+    /// Returns a DER encoder for the `ROAPayloadState` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((self.encode_payload(), self.hash.encode_ref()))
+    }
+}
+
+impl RoaPayloadSet {
+    /// Creates a canonical payload set from at least one address.
+    pub fn new(as_id: Asn, addresses: Vec<RoaIpAddress>) -> Result<Self, Error> {
+        if addresses.is_empty() {
+            return Err(Error::invalid(format!(
+                "ROA payload set for AS {as_id} needs at least one address"
+            )));
+        }
+        Ok(Self::canonical(as_id, addresses))
+    }
+
+    fn canonical(as_id: Asn, addresses: Vec<RoaIpAddress>) -> Self {
+        let mut v4 = Vec::new();
+        let mut v6 = Vec::new();
+        for address in addresses {
+            let address = address.canonical();
+            match address.prefix().afi() {
+                Afi::Ipv4 => v4.push(address),
+                Afi::Ipv6 => v6.push(address),
+            }
+        }
+        let ip_addr_blocks = [(Afi::Ipv4, v4), (Afi::Ipv6, v6)]
+            .into_iter()
+            .filter(|(_, addresses)| !addresses.is_empty())
+            .map(|(afi, addresses)| RoaIpAddressFamily {
+                afi,
+                addresses: sort_dedup_by_key(addresses, |a| (a.prefix(), a.effective_max_length())),
+            })
+            .collect();
+        RoaPayloadSet {
+            as_id,
+            ip_addr_blocks,
+        }
+    }
+
+    /// Returns a DER encoder for the `ROAPayloadSet` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((
+            self.as_id.encode_ref(),
+            encode::sequence(encode::iter(
+                self.ip_addr_blocks
+                    .iter()
+                    .map(RoaIpAddressFamily::encode_ref),
+            )),
+        ))
+    }
+}
+
+impl RoaIpAddressFamily {
+    /// Returns a DER encoder for the `ROAIPAddressFamily` sequence.
+    pub fn encode_ref(&self) -> impl Values + '_ {
+        encode::sequence((
+            self.afi.encode_ref(),
+            encode::sequence(encode::iter(
+                self.addresses.iter().map(RoaIpAddress::encode_ref),
+            )),
+        ))
     }
 }
