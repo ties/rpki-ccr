@@ -30,7 +30,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: uv sync
       - run: uv run pytest -q
-      - run: uv run python -m mypy.stubtest rpki_ccr
+      - run: uv run python -m mypy.stubtest rpki_ccr --allowlist stubtest-allowlist.txt
 
   linux:
     runs-on: ${{ matrix.platform.runner }}

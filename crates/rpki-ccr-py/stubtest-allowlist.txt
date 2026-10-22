@@ -1,0 +1,3 @@
+# Implementation details that are deliberately absent from rpki_ccr.pyi.
+rpki_ccr.rpki_ccr
+rpki_ccr\.\w+\.__getnewargs_ex__

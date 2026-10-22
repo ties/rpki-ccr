@@ -76,7 +76,7 @@ cd crates/rpki-ccr-py
 uv sync                                  # builds the extension into .venv
 uv run maturin develop --uv              # after Rust changes
 uv run pytest
-uv run python -m mypy.stubtest rpki_ccr  # keeps rpki_ccr.pyi honest
+uv run python -m mypy.stubtest rpki_ccr --allowlist stubtest-allowlist.txt  # keeps rpki_ccr.pyi honest
 ```
 
 Wheels are built for the stable ABI (`abi3`, Python 3.9+).

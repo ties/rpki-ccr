@@ -37,7 +37,7 @@ def test_prefix_rejects_bad_input() -> None:
     with pytest.raises(rpki_ccr.InvalidValueError):
         Prefix("192.0.2.0", 33)
     with pytest.raises(TypeError):
-        Prefix(42)  # type: ignore[arg-type]
+        Prefix(42)  # type: ignore[call-overload]
     with pytest.raises(OverflowError):
         Prefix("192.0.2.0", 300)
 
