@@ -33,6 +33,13 @@ def test_sequence_protocol(example: Ccr, example_der: bytes, attr: str) -> None:
         assert item in view
         assert view.index(item) == i
         assert view.count(item) == 1
+    assert view.index(items[-1], -1) == n - 1
+    assert view.index(items[0], 0, 1) == 0
+    assert view.index(items[0], -100, 100) == 0
+    with pytest.raises(ValueError):
+        view.index(items[0], 1)
+    with pytest.raises(ValueError):
+        view.index(items[-1], 0, n - 1)
     assert "not an element" not in view
     assert view.count("not an element") == 0
     with pytest.raises(ValueError):

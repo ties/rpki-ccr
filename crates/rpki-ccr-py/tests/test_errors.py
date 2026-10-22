@@ -1,6 +1,7 @@
 """Exceptions and their attributes."""
 
 import gzip
+import pathlib
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -60,7 +61,7 @@ def test_der_and_gzip_errors(example_der: bytes) -> None:
         Ccr.decode(b"")
 
 
-def test_file_errors(tmp_path) -> None:
+def test_file_errors(tmp_path: pathlib.Path) -> None:
     missing = tmp_path / "missing.ccr"
     with pytest.raises(FileNotFoundError) as info:
         Ccr.from_file(missing)

@@ -53,9 +53,22 @@ macro_rules! sequence_view {
                 }
             }
 
-            fn position(&self, item: &::pyo3::Bound<'_, ::pyo3::PyAny>) -> Option<usize> {
+            fn position(
+                &self,
+                item: &::pyo3::Bound<'_, ::pyo3::PyAny>,
+                start: isize,
+                stop: Option<isize>,
+            ) -> Option<usize> {
                 let needle = Self::needle_of(item)?;
-                (0..Self::len_of(&self.inner)).find(|&i| Self::get_of(&self.inner, i) == needle)
+                let len = Self::len_of(&self.inner);
+                // Python's slice semantics for the bounds: negative counts from the end, then clamp.
+                let clamp = |bound: isize| -> usize {
+                    let bound = if bound < 0 { bound + len as isize } else { bound };
+                    bound.clamp(0, len as isize) as usize
+                };
+                let start = clamp(start);
+                let stop = stop.map_or(len, clamp);
+                (start..stop).find(|&i| Self::get_of(&self.inner, i) == needle)
             }
         }
 
@@ -97,12 +110,18 @@ macro_rules! sequence_view {
             }
 
             fn __contains__(&self, item: &::pyo3::Bound<'_, ::pyo3::PyAny>) -> bool {
-                self.position(item).is_some()
+                self.position(item, 0, None).is_some()
             }
 
-            /// The index of the first occurrence of `item`.
-            fn index(&self, item: &::pyo3::Bound<'_, ::pyo3::PyAny>) -> ::pyo3::PyResult<usize> {
-                self.position(item)
+            /// The index of the first occurrence of `item` in `[start, stop)`.
+            #[pyo3(signature = (item, start = 0, stop = None, /))]
+            fn index(
+                &self,
+                item: &::pyo3::Bound<'_, ::pyo3::PyAny>,
+                start: isize,
+                stop: Option<isize>,
+            ) -> ::pyo3::PyResult<usize> {
+                self.position(item, start, stop)
                     .ok_or_else(|| ::pyo3::exceptions::PyValueError::new_err("item is not in the sequence"))
             }
 
