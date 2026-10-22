@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/kockt/.cargo/registry/src/**)",
+      "Read(//home/kockt/src/**)",
+      "Bash(cargo --version)",
+      "Bash(rustc --version)",
+      "Bash(ls)",
+      "Bash(grep -rli \"ccr\" --include=*.c --include=*.h --include=*.asn1 --include=Makefile* --include=*.am .)",
+      "Bash(rustup component *)"
+    ]
+  }
+}

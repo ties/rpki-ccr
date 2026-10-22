@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = ["crates/rpki-ccr"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[workspace.dependencies]
+bcder = "0.7.7"
+bytes = "1"
+chrono = { version = "0.4.41", default-features = false, features = ["std"] }
+sha2 = "0.10"
+thiserror = "2"
+flate2 = "1"
+base64 = "0.22"

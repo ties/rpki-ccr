@@ -1,0 +1,75 @@
+//! Parser for RPKI Canonical Cache Representation (CCR) files.
+//!
+//! A CCR file (draft-ietf-sidrops-rpki-ccr) is a DER-encoded, byte-for-byte
+//! reproducible snapshot of the state of a validated RPKI cache: the current
+//! manifests, validated ROA payloads (VRPs), ASPA payloads, trust anchors and
+//! BGPsec router keys. Every state aspect carries a SHA-256 digest over its
+//! payload so that file corruption can be detected without a signature.
+//!
+//! This crate decodes CCR files with [`bcder`] and, by default, enforces every
+//! requirement of the specification: digest verification, canonical ordering
+//! and uniqueness, and the contextual bounds of all fields. Analytics tooling
+//! that must inspect non-conforming files can relax the semantic checks with
+//! [`DecodeOptions`].
+//!
+//! ```no_run
+//! use rpki_ccr::Ccr;
+//!
+//! let data = std::fs::read("rpki.ccr").unwrap();
+//! let ccr = Ccr::decode(&data).unwrap(); // gzip input is detected automatically
+//! println!("produced at {}", ccr.produced_at());
+//! if let Some(roas) = ccr.roa_payloads() {
+//!     for vrp in roas.vrps() {
+//!         println!("{vrp}");
+//!     }
+//! }
+//! ```
+//!
+//! # Features
+//!
+//! * `gzip` (default): transparently inflate gzip-compressed CCR files
+//!   (`application/rpki-ccr+gzip`).
+
+#![warn(missing_docs)]
+#![forbid(unsafe_code)]
+
+mod access;
+mod aspa;
+mod ccr;
+mod digest;
+mod error;
+mod hex;
+mod key_identifier;
+mod manifest;
+mod manifest_number;
+pub mod oid;
+mod options;
+mod resources;
+mod roa;
+mod router_key;
+mod spki;
+mod time;
+mod trust_anchor;
+mod validate;
+
+pub use access::AccessDescription;
+pub use aspa::{AspaPayloadSet, AspaPayloadState};
+pub use ccr::{Ccr, HashAlgorithm};
+pub use digest::Digest;
+pub use error::{Aspect, Error};
+pub use key_identifier::KeyIdentifier;
+pub use manifest::{ManifestInstance, ManifestState};
+pub use manifest_number::ManifestNumber;
+pub use options::DecodeOptions;
+pub use resources::{Afi, Asn, Prefix, RoaIpAddress, Vrp};
+pub use roa::{RoaIpAddressFamily, RoaPayloadSet, RoaPayloadState};
+pub use router_key::{RouterKey, RouterKeySet, RouterKeyState};
+pub use spki::SubjectPublicKeyInfo;
+pub use trust_anchor::TrustAnchorState;
+
+/// Re-export of the `bcder` crate used for the ASN.1 types in the public API.
+pub use bcder;
+/// Re-export of the `bytes` crate used in the public API.
+pub use bytes;
+/// Re-export of the `chrono` crate used for timestamps in the public API.
+pub use chrono;
