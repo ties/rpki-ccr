@@ -112,6 +112,20 @@ cargo run --example ccr-dump -- --lenient broken.ccr.gz
 
 * `gzip` (default): inflate `application/rpki-ccr+gzip` input automatically.
 
+## Python
+
+`crates/rpki-ccr-py` provides the `rpki_ccr` Python package (pyo3, abi3
+wheels for Python 3.9+) with the same model: `Ccr.decode` / `Ccr.from_file`,
+typed exceptions, read-only sequence views for the five state aspects, value
+classes for building files, and validate-before-encode `to_der()`. See
+[crates/rpki-ccr-py/README.md](crates/rpki-ccr-py/README.md).
+
+```python
+from rpki_ccr import Ccr
+for vrp in Ccr.from_file("rpki.ccr").roa_payloads:
+    print(vrp)
+```
+
 ## Roadmap
 
 1. Parsing and validation. Done.
@@ -120,11 +134,12 @@ cargo run --example ccr-dump -- --lenient broken.ccr.gz
    a generated fixture (`tests/data/multi-location.ccr`) whose manifest
    instances carry multiple `AccessDescription`s. Done.
 3. Python bindings in `crates/rpki-ccr-py` (pyo3 + maturin), modelled on
-   [rpki-rs-py](https://github.com/ties/rpki-rs-py).
+   [rpki-rs-py](https://github.com/ties/rpki-rs-py). Done.
 
 ## Development
 
 ```sh
+export PATH="$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$PATH"  # if cargo fmt/clippy are not found
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace

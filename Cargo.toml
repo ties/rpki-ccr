@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/rpki-ccr"]
+members = ["crates/rpki-ccr", "crates/rpki-ccr-py"]
+default-members = ["crates/rpki-ccr"]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,3 +16,5 @@ sha2 = "0.10"
 thiserror = "2"
 flate2 = "1"
 base64 = "0.22"
+pyo3 = { version = "0.30", features = ["abi3-py39", "chrono", "num-bigint"] }
+num-bigint = "0.4"

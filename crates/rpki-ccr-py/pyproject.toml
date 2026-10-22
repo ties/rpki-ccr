@@ -1,0 +1,37 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "rpki-ccr"
+description = "Parser and encoder for RPKI Canonical Cache Representation (CCR) files"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3",
+    "Topic :: Internet",
+    "Topic :: System :: Networking",
+    "Typing :: Typed",
+]
+dynamic = ["version"]
+
+[tool.maturin]
+module-name = "rpki_ccr"
+features = ["pyo3/extension-module"]
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "src/**/*.rs" },
+    { file = "../rpki-ccr/src/**/*.rs" },
+]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.8,<2.0",
+    "mypy>=1.10",
+    "pytest>=8.3",
+]
