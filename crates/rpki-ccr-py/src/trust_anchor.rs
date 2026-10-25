@@ -65,6 +65,7 @@ sequence_view!(
     iter: TrustAnchorStateIter,
     attr: "trust_anchors",
     elem: KeyIdentifier,
+    state: |inner| inner.ccr.trust_anchors().expect("present"),
     len: |inner| inner.ccr.trust_anchors().map_or(0, TrustAnchorState::len),
     get: |inner, index| inner.ccr.trust_anchors().expect("present").skis()[index],
     to_py: |py, value| Ok(PyBytes::new(py, value.as_slice()).into_any()),

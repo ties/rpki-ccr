@@ -5,13 +5,21 @@
 //! declared digests are equal are skipped outright. An aspect that is absent
 //! on one side is compared as if it were empty; an aspect absent on both
 //! sides yields `None`.
+//!
+//! The state types also offer plain set operations (`difference`,
+//! `intersection`, `union`, `symmetric_difference`) over the same element
+//! identities, returning the elements in canonical order.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 
-use crate::{Asn, AspaPayloadSet, Ccr, KeyIdentifier, ManifestInstance, RouterKey, Vrp};
+use crate::{
+    Asn, AspaPayloadSet, AspaPayloadState, Ccr, KeyIdentifier, ManifestInstance, ManifestState,
+    RoaPayloadState, RouterKey, RouterKeyState, TrustAnchorState, Vrp,
+};
 
 /// The difference between two sets, as computed by [`Ccr::diff`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -49,14 +57,32 @@ impl<T> SetDiff<T> {
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
     }
+
+    /// The same difference seen from the other direction: added and removed
+    /// swap places.
+    pub fn reversed(&self) -> Self
+    where
+        T: Clone,
+    {
+        SetDiff {
+            added: self.removed.clone(),
+            removed: self.added.clone(),
+            unchanged: self.unchanged,
+        }
+    }
 }
 
 /// Merges two sequences sorted ascending by `key` into a [`SetDiff`].
 fn merge_by_key<T: Clone, K: Ord>(before: &[T], after: &[T], key: impl Fn(&T) -> K) -> SetDiff<T> {
+    merge_by(before, after, |a, b| key(a).cmp(&key(b)))
+}
+
+/// Merges two sequences sorted ascending by `cmp` into a [`SetDiff`].
+fn merge_by<T: Clone>(before: &[T], after: &[T], cmp: impl Fn(&T, &T) -> Ordering) -> SetDiff<T> {
     let mut diff = SetDiff::unchanged_only(0);
     let (mut i, mut j) = (0, 0);
     while i < before.len() && j < after.len() {
-        match key(&before[i]).cmp(&key(&after[j])) {
+        match cmp(&before[i], &after[j]) {
             Ordering::Less => {
                 diff.removed.push(before[i].clone());
                 i += 1;
@@ -77,15 +103,181 @@ fn merge_by_key<T: Clone, K: Ord>(before: &[T], after: &[T], key: impl Fn(&T) ->
     diff
 }
 
-/// Collects `items` and sorts them by `key` unless they already are, which
+/// Collects `items` and sorts them by `cmp` unless they already are, which
 /// is always the case for a valid CCR.
-fn sorted_by_key<T, K: Ord>(items: impl Iterator<Item = T>, key: impl Fn(&T) -> K) -> Vec<T> {
+fn sorted_by<T>(items: impl Iterator<Item = T>, cmp: impl Fn(&T, &T) -> Ordering) -> Vec<T> {
     let mut items: Vec<T> = items.collect();
-    if !items.is_sorted_by_key(&key) {
-        items.sort_by_key(&key);
+    if !items.is_sorted_by(|a, b| cmp(a, b) != Ordering::Greater) {
+        items.sort_by(&cmp);
     }
     items
 }
+
+/// Borrows `items` when they are sorted by `cmp`, otherwise a sorted copy.
+fn canonical<'a, T: Clone>(items: &'a [T], cmp: impl Fn(&T, &T) -> Ordering) -> Cow<'a, [T]> {
+    if items.is_sorted_by(|a, b| cmp(a, b) != Ordering::Greater) {
+        Cow::Borrowed(items)
+    } else {
+        let mut copy = items.to_vec();
+        copy.sort_by(&cmp);
+        Cow::Owned(copy)
+    }
+}
+
+/// A set operation over two sequences sorted by the same comparator.
+#[derive(Clone, Copy)]
+enum SetOp {
+    Difference,
+    Intersection,
+    Union,
+    SymmetricDifference,
+}
+
+/// Applies `op` to two sequences sorted ascending by `cmp`. On equal
+/// elements the left one is kept.
+fn set_op_by<T: Clone>(
+    left: &[T],
+    right: &[T],
+    cmp: impl Fn(&T, &T) -> Ordering,
+    op: SetOp,
+) -> Vec<T> {
+    use SetOp::*;
+    let keep_left_only = matches!(op, Difference | Union | SymmetricDifference);
+    let keep_right_only = matches!(op, Union | SymmetricDifference);
+    let keep_common = matches!(op, Intersection | Union);
+    let mut out = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < left.len() && j < right.len() {
+        match cmp(&left[i], &right[j]) {
+            Ordering::Less => {
+                if keep_left_only {
+                    out.push(left[i].clone());
+                }
+                i += 1;
+            }
+            Ordering::Greater => {
+                if keep_right_only {
+                    out.push(right[j].clone());
+                }
+                j += 1;
+            }
+            Ordering::Equal => {
+                if keep_common {
+                    out.push(left[i].clone());
+                }
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    if keep_left_only {
+        out.extend(left[i..].iter().cloned());
+    }
+    if keep_right_only {
+        out.extend(right[j..].iter().cloned());
+    }
+    out
+}
+
+// ---- Comparators defining element identity ----------------------------------
+
+fn cmp_manifest(a: &ManifestInstance, b: &ManifestInstance) -> Ordering {
+    a.hash().cmp(b.hash())
+}
+
+fn cmp_vrp(a: &Vrp, b: &Vrp) -> Ordering {
+    a.cmp(b)
+}
+
+fn cmp_aspa(a: &AspaPayloadSet, b: &AspaPayloadSet) -> Ordering {
+    a.customer_as_id()
+        .cmp(&b.customer_as_id())
+        .then_with(|| a.providers().cmp(b.providers()))
+}
+
+fn cmp_ski(a: &KeyIdentifier, b: &KeyIdentifier) -> Ordering {
+    a.cmp(b)
+}
+
+fn cmp_router_key(a: &(Asn, RouterKey), b: &(Asn, RouterKey)) -> Ordering {
+    a.0.cmp(&b.0).then_with(|| a.1.ski().cmp(b.1.ski()))
+}
+
+/// Defines the four set operations on a state type in terms of a sorted
+/// element vector and a comparator.
+macro_rules! set_operations {
+    ($state:ty, $elem:ty, $cmp:ident, |$this:ident| $elements:expr, $doc:literal) => {
+        impl $state {
+            fn canonical_elements(&self) -> Cow<'_, [$elem]> {
+                let $this = self;
+                $elements
+            }
+
+            fn set_op(&self, other: &Self, op: SetOp) -> Vec<$elem> {
+                set_op_by(&self.canonical_elements(), &other.canonical_elements(), $cmp, op)
+            }
+
+            #[doc = concat!("Elements of `self` that `other` lacks, in canonical order. ", $doc)]
+            pub fn difference(&self, other: &Self) -> Vec<$elem> {
+                self.set_op(other, SetOp::Difference)
+            }
+
+            #[doc = concat!("Elements present in both, in canonical order (taken from `self`). ", $doc)]
+            pub fn intersection(&self, other: &Self) -> Vec<$elem> {
+                self.set_op(other, SetOp::Intersection)
+            }
+
+            #[doc = concat!("Elements present in either, in canonical order (`self`'s on ties). ", $doc)]
+            pub fn union(&self, other: &Self) -> Vec<$elem> {
+                self.set_op(other, SetOp::Union)
+            }
+
+            #[doc = concat!("Elements present in exactly one of the two, in canonical order. ", $doc)]
+            pub fn symmetric_difference(&self, other: &Self) -> Vec<$elem> {
+                self.set_op(other, SetOp::SymmetricDifference)
+            }
+        }
+    };
+}
+
+set_operations!(
+    ManifestState,
+    ManifestInstance,
+    cmp_manifest,
+    |this| canonical(this.instances(), cmp_manifest),
+    "Instances are identified by their hash."
+);
+set_operations!(
+    RoaPayloadState,
+    Vrp,
+    cmp_vrp,
+    |this| Cow::Owned(sorted_by(this.vrps(), cmp_vrp)),
+    "VRPs are identified by AS number, prefix and maximum length."
+);
+set_operations!(
+    AspaPayloadState,
+    AspaPayloadSet,
+    cmp_aspa,
+    |this| canonical(this.sets(), cmp_aspa),
+    "Sets are identified by customer AS and provider list."
+);
+set_operations!(
+    TrustAnchorState,
+    KeyIdentifier,
+    cmp_ski,
+    |this| canonical(this.skis(), cmp_ski),
+    "Trust anchors are identified by key identifier."
+);
+set_operations!(
+    RouterKeyState,
+    (Asn, RouterKey),
+    cmp_router_key,
+    |this| Cow::Owned(sorted_by(
+        this.router_keys().map(|(asn, key)| (asn, key.clone())),
+        cmp_router_key
+    )),
+    "Router keys are identified by AS number and key identifier."
+);
 
 /// How the manifests of one issuer changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -120,6 +312,15 @@ impl IssuerChange {
     /// The issuer's manifest instances in the newer CCR (usually one).
     pub fn after(&self) -> &[ManifestInstance] {
         &self.after
+    }
+
+    /// The same change seen from the other direction.
+    pub fn reversed(&self) -> Self {
+        IssuerChange {
+            aki: self.aki,
+            before: self.after.clone(),
+            after: self.before.clone(),
+        }
     }
 
     /// Whether the issuer appeared, disappeared or published new manifests.
@@ -219,6 +420,15 @@ impl ManifestDiff {
     pub fn is_empty(&self) -> bool {
         self.by_hash.is_empty()
     }
+
+    /// The same difference seen from the other direction.
+    pub fn reversed(&self) -> Self {
+        ManifestDiff {
+            by_hash: self.by_hash.reversed(),
+            issuers: self.issuers.iter().map(IssuerChange::reversed).collect(),
+            unchanged_issuers: self.unchanged_issuers,
+        }
+    }
 }
 
 /// A customer AS whose provider set changed.
@@ -252,6 +462,14 @@ impl AspaUpdate {
     /// Providers present in the older set only.
     pub fn providers_removed(&self) -> Vec<Asn> {
         merge_by_key(self.before.providers(), self.after.providers(), |p| *p).removed
+    }
+
+    /// The same update seen from the other direction.
+    pub fn reversed(&self) -> Self {
+        AspaUpdate {
+            before: self.after.clone(),
+            after: self.before.clone(),
+        }
     }
 }
 
@@ -326,6 +544,16 @@ impl AspaPayloadDiff {
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty() && self.updated.is_empty()
     }
+
+    /// The same difference seen from the other direction.
+    pub fn reversed(&self) -> Self {
+        AspaPayloadDiff {
+            added: self.removed.clone(),
+            removed: self.added.clone(),
+            updated: self.updated.iter().map(AspaUpdate::reversed).collect(),
+            unchanged: self.unchanged,
+        }
+    }
 }
 
 /// The difference between two CCRs, from an older one to a newer one.
@@ -355,14 +583,8 @@ impl CcrDiff {
                     .len(),
             }),
             (a, b) => {
-                let before =
-                    sorted_by_key(a.map_or(&[][..], |s| s.instances()).iter().cloned(), |mi| {
-                        *mi.hash()
-                    });
-                let after =
-                    sorted_by_key(b.map_or(&[][..], |s| s.instances()).iter().cloned(), |mi| {
-                        *mi.hash()
-                    });
+                let before = a.map_or(Cow::Borrowed(&[][..]), ManifestState::canonical_elements);
+                let after = b.map_or(Cow::Borrowed(&[][..]), ManifestState::canonical_elements);
                 Some(ManifestDiff::compute(&before, &after))
             }
         };
@@ -372,9 +594,9 @@ impl CcrDiff {
                 Some(SetDiff::unchanged_only(a.vrps().count()))
             }
             (a, b) => {
-                let before = sorted_by_key(a.into_iter().flat_map(|s| s.vrps()), |v| *v);
-                let after = sorted_by_key(b.into_iter().flat_map(|s| s.vrps()), |v| *v);
-                Some(merge_by_key(&before, &after, |v| *v))
+                let before = a.map_or(Cow::Borrowed(&[][..]), RoaPayloadState::canonical_elements);
+                let after = b.map_or(Cow::Borrowed(&[][..]), RoaPayloadState::canonical_elements);
+                Some(merge_by(&before, &after, cmp_vrp))
             }
         };
         let aspa_payloads = match (before.aspa_payloads(), after.aspa_payloads()) {
@@ -386,9 +608,11 @@ impl CcrDiff {
                 unchanged: a.len(),
             }),
             (a, b) => {
-                let key = |set: &AspaPayloadSet| set.customer_as_id();
-                let before = sorted_by_key(a.map_or(&[][..], |s| s.sets()).iter().cloned(), key);
-                let after = sorted_by_key(b.map_or(&[][..], |s| s.sets()).iter().cloned(), key);
+                let by_customer = |x: &AspaPayloadSet, y: &AspaPayloadSet| {
+                    x.customer_as_id().cmp(&y.customer_as_id())
+                };
+                let before = a.map_or(Cow::Borrowed(&[][..]), |s| canonical(s.sets(), by_customer));
+                let after = b.map_or(Cow::Borrowed(&[][..]), |s| canonical(s.sets(), by_customer));
                 Some(AspaPayloadDiff::compute(&before, &after))
             }
         };
@@ -396,9 +620,9 @@ impl CcrDiff {
             (None, None) => None,
             (Some(a), Some(b)) if a.hash() == b.hash() => Some(SetDiff::unchanged_only(a.len())),
             (a, b) => {
-                let before = sorted_by_key(a.map_or(&[][..], |s| s.skis()).iter().copied(), |k| *k);
-                let after = sorted_by_key(b.map_or(&[][..], |s| s.skis()).iter().copied(), |k| *k);
-                Some(merge_by_key(&before, &after, |k| *k))
+                let before = a.map_or(Cow::Borrowed(&[][..]), TrustAnchorState::canonical_elements);
+                let after = b.map_or(Cow::Borrowed(&[][..]), TrustAnchorState::canonical_elements);
+                Some(merge_by(&before, &after, cmp_ski))
             }
         };
         let router_keys = match (before.router_keys(), after.router_keys()) {
@@ -407,16 +631,9 @@ impl CcrDiff {
                 Some(SetDiff::unchanged_only(a.router_keys().count()))
             }
             (a, b) => {
-                let key = |(asn, key): &(Asn, RouterKey)| (*asn, *key.ski());
-                let entries = |state: Option<&crate::RouterKeyState>| {
-                    sorted_by_key(
-                        state
-                            .into_iter()
-                            .flat_map(|s| s.router_keys().map(|(asn, key)| (asn, key.clone()))),
-                        key,
-                    )
-                };
-                Some(merge_by_key(&entries(a), &entries(b), key))
+                let before = a.map_or(Cow::Borrowed(&[][..]), RouterKeyState::canonical_elements);
+                let after = b.map_or(Cow::Borrowed(&[][..]), RouterKeyState::canonical_elements);
+                Some(merge_by(&before, &after, cmp_router_key))
             }
         };
         CcrDiff {
@@ -427,6 +644,20 @@ impl CcrDiff {
             aspa_payloads,
             trust_anchors,
             router_keys,
+        }
+    }
+
+    /// The same difference seen from the other direction: `producedAt`s
+    /// swap, added and removed swap, issuer and provider changes reverse.
+    pub fn reversed(&self) -> Self {
+        CcrDiff {
+            before_produced_at: self.after_produced_at,
+            after_produced_at: self.before_produced_at,
+            manifests: self.manifests.as_ref().map(ManifestDiff::reversed),
+            roa_payloads: self.roa_payloads.as_ref().map(SetDiff::reversed),
+            aspa_payloads: self.aspa_payloads.as_ref().map(AspaPayloadDiff::reversed),
+            trust_anchors: self.trust_anchors.as_ref().map(SetDiff::reversed),
+            router_keys: self.router_keys.as_ref().map(SetDiff::reversed),
         }
     }
 
@@ -510,6 +741,26 @@ mod tests {
 
     #[test]
     fn sorts_unsorted_input() {
-        assert_eq!(sorted_by_key([3, 1, 2].into_iter(), |x| *x), [1, 2, 3]);
+        assert_eq!(sorted_by([3, 1, 2].into_iter(), |a, b| a.cmp(b)), [1, 2, 3]);
+        assert!(matches!(
+            canonical(&[1, 2, 3], |a, b| a.cmp(b)),
+            Cow::Borrowed(_)
+        ));
+        assert!(matches!(canonical(&[2, 1], |a, b| a.cmp(b)), Cow::Owned(_)));
+    }
+
+    #[test]
+    fn set_operations_over_sorted_input() {
+        let cmp = |a: &u8, b: &u8| a.cmp(b);
+        let (l, r) = ([1u8, 3, 5, 7], [3u8, 4, 7, 9]);
+        assert_eq!(set_op_by(&l, &r, cmp, SetOp::Difference), [1, 5]);
+        assert_eq!(set_op_by(&l, &r, cmp, SetOp::Intersection), [3, 7]);
+        assert_eq!(set_op_by(&l, &r, cmp, SetOp::Union), [1, 3, 4, 5, 7, 9]);
+        assert_eq!(
+            set_op_by(&l, &r, cmp, SetOp::SymmetricDifference),
+            [1, 4, 5, 9]
+        );
+        assert_eq!(set_op_by(&l, &[], cmp, SetOp::Intersection), []);
+        assert_eq!(set_op_by(&[], &r, cmp, SetOp::Union), r);
     }
 }

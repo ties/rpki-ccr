@@ -111,6 +111,7 @@ sequence_view!(
     iter: RoaPayloadStateIter,
     attr: "roa_payloads",
     elem: Vrp,
+    state: |inner| state_of(inner),
     len: |inner| inner.ccr.roa_payloads().map_or(0, |_| index_of(inner).total()),
     get: |inner, index| index_of(inner).get(state_of(inner), index),
     to_py: |py, value| Ok(PyVrp(value).into_pyobject(py)?.into_any()),

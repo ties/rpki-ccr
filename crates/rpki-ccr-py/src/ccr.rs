@@ -29,6 +29,18 @@ pub(crate) struct Inner {
     pub(crate) router_key_index: OnceLock<RouterKeyIndex>,
 }
 
+impl PyCcr {
+    fn compute_diff(
+        py: Python<'_>,
+        before: &Arc<Inner>,
+        after: &Arc<Inner>,
+    ) -> crate::diff::PyCcrDiff {
+        let before = Arc::clone(before);
+        let after = Arc::clone(after);
+        py.detach(move || crate::diff::PyCcrDiff::from_diff(&before.ccr.diff(&after.ccr)))
+    }
+}
+
 impl Inner {
     fn new(ccr: Ccr) -> Arc<Self> {
         Arc::new(Inner {
@@ -326,12 +338,20 @@ impl PyCcr {
 
     /// Computes the changes from this (older) CCR to `after`.
     fn diff(&self, py: Python<'_>, after: PyRef<'_, PyCcr>) -> crate::diff::PyCcrDiff {
-        let before = Arc::clone(&self.inner);
-        let after = Arc::clone(&after.inner);
-        let diff = py.detach(move || before.ccr.diff(&after.ccr));
-        crate::diff::PyCcrDiff {
-            inner: Arc::new(diff),
-        }
+        Self::compute_diff(py, &self.inner, &after.inner)
+    }
+
+    /// `new - old`: the changes from `other` (the older CCR) to this one.
+    fn __sub__<'py>(
+        &self,
+        py: Python<'py>,
+        other: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let Ok(other) = other.cast::<PyCcr>() else {
+            return Ok(py.NotImplemented().into_bound(py).into_any());
+        };
+        let diff = Self::compute_diff(py, &other.get().inner, &self.inner);
+        Ok(diff.into_pyobject(py)?.into_any())
     }
 
     fn __repr__(&self) -> String {

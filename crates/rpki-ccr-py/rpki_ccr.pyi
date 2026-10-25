@@ -304,6 +304,14 @@ class ManifestState(Sequence[ManifestInstance]):
     def count(self, item: ManifestInstance) -> int: ...
     def __hash__(self) -> int: ...
     def __eq__(self, other: object, /) -> bool: ...
+    def __sub__(self, other: ManifestState, /) -> list[ManifestInstance]:
+        """Elements of this view that ``other`` lacks, in canonical order."""
+    def __and__(self, other: ManifestState, /) -> list[ManifestInstance]:
+        """Elements present in both views, in canonical order."""
+    def __or__(self, other: ManifestState, /) -> list[ManifestInstance]:
+        """Elements present in either view, in canonical order (this view's on ties)."""
+    def __xor__(self, other: ManifestState, /) -> list[ManifestInstance]:
+        """Elements present in exactly one of the views, in canonical order."""
 
 @final
 class RoaPayloadState(Sequence[Vrp]):
@@ -322,6 +330,14 @@ class RoaPayloadState(Sequence[Vrp]):
     def count(self, item: Vrp) -> int: ...
     def __hash__(self) -> int: ...
     def __eq__(self, other: object, /) -> bool: ...
+    def __sub__(self, other: RoaPayloadState, /) -> list[Vrp]:
+        """Elements of this view that ``other`` lacks, in canonical order."""
+    def __and__(self, other: RoaPayloadState, /) -> list[Vrp]:
+        """Elements present in both views, in canonical order."""
+    def __or__(self, other: RoaPayloadState, /) -> list[Vrp]:
+        """Elements present in either view, in canonical order (this view's on ties)."""
+    def __xor__(self, other: RoaPayloadState, /) -> list[Vrp]:
+        """Elements present in exactly one of the views, in canonical order."""
 
 @final
 class AspaPayloadState(Sequence[AspaPayloadSet]):
@@ -340,6 +356,14 @@ class AspaPayloadState(Sequence[AspaPayloadSet]):
     def count(self, item: AspaPayloadSet) -> int: ...
     def __hash__(self) -> int: ...
     def __eq__(self, other: object, /) -> bool: ...
+    def __sub__(self, other: AspaPayloadState, /) -> list[AspaPayloadSet]:
+        """Elements of this view that ``other`` lacks, in canonical order."""
+    def __and__(self, other: AspaPayloadState, /) -> list[AspaPayloadSet]:
+        """Elements present in both views, in canonical order."""
+    def __or__(self, other: AspaPayloadState, /) -> list[AspaPayloadSet]:
+        """Elements present in either view, in canonical order (this view's on ties)."""
+    def __xor__(self, other: AspaPayloadState, /) -> list[AspaPayloadSet]:
+        """Elements present in exactly one of the views, in canonical order."""
 
 @final
 class TrustAnchorState(Sequence[bytes]):
@@ -358,6 +382,14 @@ class TrustAnchorState(Sequence[bytes]):
     def count(self, item: bytes) -> int: ...
     def __hash__(self) -> int: ...
     def __eq__(self, other: object, /) -> bool: ...
+    def __sub__(self, other: TrustAnchorState, /) -> list[bytes]:
+        """Elements of this view that ``other`` lacks, in canonical order."""
+    def __and__(self, other: TrustAnchorState, /) -> list[bytes]:
+        """Elements present in both views, in canonical order."""
+    def __or__(self, other: TrustAnchorState, /) -> list[bytes]:
+        """Elements present in either view, in canonical order (this view's on ties)."""
+    def __xor__(self, other: TrustAnchorState, /) -> list[bytes]:
+        """Elements present in exactly one of the views, in canonical order."""
 
 @final
 class RouterKeyState(Sequence[RouterKey]):
@@ -376,6 +408,14 @@ class RouterKeyState(Sequence[RouterKey]):
     def count(self, item: RouterKey) -> int: ...
     def __hash__(self) -> int: ...
     def __eq__(self, other: object, /) -> bool: ...
+    def __sub__(self, other: RouterKeyState, /) -> list[RouterKey]:
+        """Elements of this view that ``other`` lacks, in canonical order."""
+    def __and__(self, other: RouterKeyState, /) -> list[RouterKey]:
+        """Elements present in both views, in canonical order."""
+    def __or__(self, other: RouterKeyState, /) -> list[RouterKey]:
+        """Elements present in either view, in canonical order (this view's on ties)."""
+    def __xor__(self, other: RouterKeyState, /) -> list[RouterKey]:
+        """Elements present in exactly one of the views, in canonical order."""
 
 @final
 class Ccr:
@@ -464,6 +504,9 @@ class Ccr:
     def diff(self, after: Ccr) -> CcrDiff:
         """The changes from this (older) CCR to ``after``: a linear merge over
         the canonical sequences; aspects with equal digests are skipped."""
+    def __sub__(self, other: Ccr, /) -> CcrDiff:
+        """``new - old``: the changes from ``other`` (the older CCR) to this one,
+        i.e. ``other.diff(self)``. Note that the result is two-sided."""
     def __hash__(self) -> int: ...
     def __eq__(self, other: object, /) -> bool: ...
 
@@ -482,6 +525,9 @@ class IssuerChange:
     @property
     def after(self) -> list[ManifestInstance]:
         """The issuer's manifest instances in the newer CCR (usually one)."""
+    def reversed(self) -> IssuerChange:
+        """The same change seen from the other direction."""
+    def __neg__(self) -> IssuerChange: ...
     def __hash__(self) -> int: ...
     def __eq__(self, other: object, /) -> bool: ...
 
@@ -500,6 +546,9 @@ class ManifestDiff:
         """Issuers whose manifests changed, appeared or disappeared, ascending by AKI."""
     @property
     def unchanged_issuers(self) -> int: ...
+    def reversed(self) -> ManifestDiff:
+        """The same difference seen from the other direction."""
+    def __neg__(self) -> ManifestDiff: ...
     def __bool__(self) -> bool: ...
 
 @final
@@ -512,6 +561,9 @@ class RoaPayloadDiff:
     def removed(self) -> list[Vrp]: ...
     @property
     def unchanged(self) -> int: ...
+    def reversed(self) -> RoaPayloadDiff:
+        """The same difference seen from the other direction."""
+    def __neg__(self) -> RoaPayloadDiff: ...
     def __bool__(self) -> bool: ...
 
 @final
@@ -528,6 +580,9 @@ class AspaUpdate:
     def providers_added(self) -> list[int]: ...
     @property
     def providers_removed(self) -> list[int]: ...
+    def reversed(self) -> AspaUpdate:
+        """The same change seen from the other direction."""
+    def __neg__(self) -> AspaUpdate: ...
     def __hash__(self) -> int: ...
     def __eq__(self, other: object, /) -> bool: ...
 
@@ -543,6 +598,9 @@ class AspaPayloadDiff:
     def updated(self) -> list[AspaUpdate]: ...
     @property
     def unchanged(self) -> int: ...
+    def reversed(self) -> AspaPayloadDiff:
+        """The same difference seen from the other direction."""
+    def __neg__(self) -> AspaPayloadDiff: ...
     def __bool__(self) -> bool: ...
 
 @final
@@ -555,6 +613,9 @@ class TrustAnchorDiff:
     def removed(self) -> list[bytes]: ...
     @property
     def unchanged(self) -> int: ...
+    def reversed(self) -> TrustAnchorDiff:
+        """The same difference seen from the other direction."""
+    def __neg__(self) -> TrustAnchorDiff: ...
     def __bool__(self) -> bool: ...
 
 @final
@@ -567,6 +628,9 @@ class RouterKeyDiff:
     def removed(self) -> list[RouterKey]: ...
     @property
     def unchanged(self) -> int: ...
+    def reversed(self) -> RouterKeyDiff:
+        """The same difference seen from the other direction."""
+    def __neg__(self) -> RouterKeyDiff: ...
     def __bool__(self) -> bool: ...
 
 @final
@@ -591,4 +655,7 @@ class CcrDiff:
     def trust_anchors(self) -> TrustAnchorDiff | None: ...
     @property
     def router_keys(self) -> RouterKeyDiff | None: ...
+    def reversed(self) -> CcrDiff:
+        """The same difference seen from the other direction."""
+    def __neg__(self) -> CcrDiff: ...
     def __bool__(self) -> bool: ...

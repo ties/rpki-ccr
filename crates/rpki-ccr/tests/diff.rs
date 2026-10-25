@@ -228,3 +228,132 @@ fn absent_aspects() {
     assert!(!diff.is_empty());
     assert!(only_tas.diff(&only_tas).is_empty());
 }
+
+#[test]
+fn set_operations_on_views() {
+    let a = Ccr::decode(DATA).unwrap();
+    let b = Ccr::decode(MULTI).unwrap();
+    let (va, vb) = (a.roa_payloads().unwrap(), b.roa_payloads().unwrap());
+    let strings =
+        |vrps: Vec<rpki_ccr::Vrp>| vrps.iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert_eq!(va.difference(vb).len(), 5);
+    assert!(va.intersection(vb).is_empty());
+    assert_eq!(
+        strings(va.union(vb)),
+        [
+            "192.0.2.0/24 AS 0",
+            "192.0.2.0/24-25 AS 64496",
+            "2001:db8::/32 AS 64496",
+            "198.51.100.0/24-28 AS 65536",
+            "2001:db8::/48 AS 65536",
+            "3fff::/32 AS 65550",
+            "3fff::/32 AS 65551",
+        ]
+    );
+    assert_eq!(va.symmetric_difference(vb).len(), 7);
+    assert_eq!(
+        strings(vb.difference(va)),
+        ["192.0.2.0/24-25 AS 64496", "2001:db8::/32 AS 64496"]
+    );
+
+    let (ta, tb) = (a.trust_anchors().unwrap(), b.trust_anchors().unwrap());
+    assert!(ta.difference(tb).is_empty());
+    assert_eq!(ta.intersection(tb), ta.skis());
+    assert_eq!(ta.union(tb), ta.skis());
+    assert!(ta.symmetric_difference(tb).is_empty());
+
+    let (ma, mb) = (a.manifests().unwrap(), b.manifests().unwrap());
+    assert_eq!(ma.difference(mb), ma.instances());
+    assert!(ma.intersection(mb).is_empty());
+    let union = ma.union(mb);
+    assert_eq!(union.len(), 6);
+    assert!(union.windows(2).all(|w| w[0].hash() < w[1].hash()));
+
+    let rk = a.router_keys().unwrap();
+    let subset = RouterKeyState::new(vec![rk.sets()[0].clone()]).unwrap();
+    assert_eq!(rk.difference(&subset).len(), 1);
+    assert_eq!(rk.difference(&subset)[0].0, Asn::new(65551));
+    assert_eq!(rk.intersection(&subset).len(), 2);
+    assert_eq!(subset.union(rk).len(), 3);
+
+    let aspa_a = a.aspa_payloads().unwrap();
+    let aspa_b = AspaPayloadState::new(vec![
+        AspaPayloadSet::new(Asn::new(64512), vec![Asn::new(64496)]).unwrap(),
+        AspaPayloadSet::new(Asn::new(65536), vec![Asn::new(65540), Asn::new(65545)]).unwrap(),
+        AspaPayloadSet::new(Asn::new(65550), vec![Asn::new(0)]).unwrap(),
+    ])
+    .unwrap();
+    let customers = |sets: Vec<AspaPayloadSet>| {
+        sets.iter()
+            .map(|s| s.customer_as_id().into_u32())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(customers(aspa_a.difference(&aspa_b)), [64511, 65536]);
+    assert_eq!(customers(aspa_a.intersection(&aspa_b)), [65550]);
+    assert_eq!(
+        customers(aspa_a.union(&aspa_b)),
+        [64511, 64512, 65536, 65536, 65550]
+    );
+    assert_eq!(
+        customers(aspa_a.symmetric_difference(&aspa_b)),
+        [64511, 64512, 65536, 65536]
+    );
+
+    // Identities.
+    assert!(va.difference(va).is_empty());
+    assert_eq!(va.intersection(va), va.vrps().collect::<Vec<_>>());
+    assert_eq!(va.union(va), va.vrps().collect::<Vec<_>>());
+    assert!(va.symmetric_difference(va).is_empty());
+}
+
+#[test]
+fn set_operations_keep_the_left_element_on_ties() {
+    let make = |size: u64| {
+        ManifestInstance::new(
+            Digest::sha256(b"same manifest"),
+            size,
+            ki("25F8CCFCEFC046D8DCD00FC0E444E0AA7B790F96"),
+            ManifestNumber::from(1u64),
+            Utc.with_ymd_and_hms(2026, 5, 15, 0, 0, 0).unwrap(),
+            vec![rpki_ccr::AccessDescription::signed_object("rsync://a").unwrap()],
+            vec![],
+        )
+        .unwrap()
+    };
+    let left = ManifestState::new(vec![make(1000)]);
+    let right = ManifestState::new(vec![make(2000)]);
+    assert_eq!(left.intersection(&right)[0].size(), 1000);
+    assert_eq!(right.intersection(&left)[0].size(), 2000);
+    assert_eq!(left.union(&right).len(), 1);
+    assert!(left.difference(&right).is_empty());
+}
+
+#[test]
+fn set_operations_sort_lenient_input() {
+    let unsorted = ccr(T0, &[ta_state(&[ski(2), ski(1)], None)]);
+    let lenient = Ccr::decode_with(&unsorted, &ValidationOptions::lenient()).unwrap();
+    let sorted = TrustAnchorState::new(vec![ski(1).into(), ski(2).into()]).unwrap();
+    let view = lenient.trust_anchors().unwrap();
+    assert!(view.difference(&sorted).is_empty());
+    assert_eq!(view.intersection(&sorted), [ski(1).into(), ski(2).into()]);
+    assert_eq!(
+        view.union(&sorted),
+        [KeyIdentifier::from(ski(1)), ski(2).into()]
+    );
+}
+
+#[test]
+fn reversed_diff_is_the_opposite_direction() {
+    let a = Ccr::decode(DATA).unwrap();
+    let b = Ccr::decode(MULTI).unwrap();
+    let forward = a.diff(&b);
+    let backward = b.diff(&a);
+    assert_eq!(forward.reversed(), backward);
+    assert_eq!(backward.reversed(), forward);
+    assert_eq!(forward.reversed().reversed(), forward);
+    assert_eq!(forward.reversed().before_produced_at(), b.produced_at());
+    let issuers = forward.reversed().manifests().unwrap().issuers().to_vec();
+    assert_eq!(issuers[1].kind(), ChangeKind::Added);
+    assert_eq!(issuers[1].before().len(), 0);
+    assert_eq!(a.diff(&a).reversed(), a.diff(&a));
+}

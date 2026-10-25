@@ -1,4 +1,45 @@
-//! The sequence protocol shared by the five state views.
+//! The sequence protocol and set operators shared by the five state views.
+
+/// A set operation between two views of the same class.
+#[derive(Clone, Copy)]
+pub(crate) enum SetOp {
+    Difference,
+    Intersection,
+    Union,
+    SymmetricDifference,
+}
+
+/// The four set operations of a state type, in canonical order.
+pub(crate) trait SetOps {
+    type Elem;
+    fn set_op(&self, other: &Self, op: SetOp) -> Vec<Self::Elem>;
+}
+
+macro_rules! impl_set_ops {
+    ($state:ty, $elem:ty) => {
+        impl SetOps for $state {
+            type Elem = $elem;
+
+            fn set_op(&self, other: &Self, op: SetOp) -> Vec<$elem> {
+                match op {
+                    SetOp::Difference => self.difference(other),
+                    SetOp::Intersection => self.intersection(other),
+                    SetOp::Union => self.union(other),
+                    SetOp::SymmetricDifference => self.symmetric_difference(other),
+                }
+            }
+        }
+    };
+}
+
+impl_set_ops!(rpki_ccr::ManifestState, rpki_ccr::ManifestInstance);
+impl_set_ops!(rpki_ccr::RoaPayloadState, rpki_ccr::Vrp);
+impl_set_ops!(rpki_ccr::AspaPayloadState, rpki_ccr::AspaPayloadSet);
+impl_set_ops!(rpki_ccr::TrustAnchorState, rpki_ccr::KeyIdentifier);
+impl_set_ops!(
+    rpki_ccr::RouterKeyState,
+    (rpki_ccr::Asn, rpki_ccr::RouterKey)
+);
 
 /// Implements `__len__`, `__getitem__` (indices and slices), `__iter__`,
 /// `__contains__`, `index`, `count` and `__reduce__` for a view type that
@@ -12,6 +53,7 @@ macro_rules! sequence_view {
         iter: $iter:ident,
         attr: $attr:literal,
         elem: $elem:ty,
+        state: |$inner_state:ident| $state:expr,
         len: |$inner_len:ident| $len:expr,
         get: |$inner_get:ident, $index:ident| $get:expr,
         to_py: |$py:ident, $value:ident| $to_py:expr,
@@ -41,6 +83,37 @@ macro_rules! sequence_view {
             fn needle_of(obj: &::pyo3::Bound<'_, ::pyo3::PyAny>) -> Option<$elem> {
                 let $obj = obj;
                 $needle
+            }
+
+            fn state_of(
+                inner: &$crate::ccr::Inner,
+            ) -> &impl $crate::view::SetOps<Elem = $elem> {
+                let $inner_state = inner;
+                $state
+            }
+
+            /// Runs a set operation against another view of the same class,
+            /// returning a list in canonical order, or `NotImplemented`.
+            fn set_op<'py>(
+                &self,
+                py: ::pyo3::Python<'py>,
+                other: &::pyo3::Bound<'py, ::pyo3::PyAny>,
+                op: $crate::view::SetOp,
+            ) -> ::pyo3::PyResult<::pyo3::Bound<'py, ::pyo3::PyAny>> {
+                use ::pyo3::prelude::*;
+                let Ok(other) = other.cast::<Self>() else {
+                    return Ok(py.NotImplemented().into_bound(py).into_any());
+                };
+                let left = ::std::sync::Arc::clone(&self.inner);
+                let right = ::std::sync::Arc::clone(&other.get().inner);
+                let items = py.detach(move || {
+                    $crate::view::SetOps::set_op(Self::state_of(&left), Self::state_of(&right), op)
+                });
+                let list = ::pyo3::types::PyList::empty(py);
+                for item in items {
+                    list.append(Self::elem_to_py(py, item)?)?;
+                }
+                Ok(list.into_any())
             }
 
             fn normalize(&self, index: isize) -> ::pyo3::PyResult<usize> {
@@ -133,6 +206,42 @@ macro_rules! sequence_view {
                         .count(),
                     None => 0,
                 }
+            }
+
+            /// Elements of this view that `other` lacks, in canonical order.
+            fn __sub__<'py>(
+                &self,
+                py: ::pyo3::Python<'py>,
+                other: &::pyo3::Bound<'py, ::pyo3::PyAny>,
+            ) -> ::pyo3::PyResult<::pyo3::Bound<'py, ::pyo3::PyAny>> {
+                self.set_op(py, other, $crate::view::SetOp::Difference)
+            }
+
+            /// Elements present in both views, in canonical order.
+            fn __and__<'py>(
+                &self,
+                py: ::pyo3::Python<'py>,
+                other: &::pyo3::Bound<'py, ::pyo3::PyAny>,
+            ) -> ::pyo3::PyResult<::pyo3::Bound<'py, ::pyo3::PyAny>> {
+                self.set_op(py, other, $crate::view::SetOp::Intersection)
+            }
+
+            /// Elements present in either view, in canonical order.
+            fn __or__<'py>(
+                &self,
+                py: ::pyo3::Python<'py>,
+                other: &::pyo3::Bound<'py, ::pyo3::PyAny>,
+            ) -> ::pyo3::PyResult<::pyo3::Bound<'py, ::pyo3::PyAny>> {
+                self.set_op(py, other, $crate::view::SetOp::Union)
+            }
+
+            /// Elements present in exactly one of the views, in canonical order.
+            fn __xor__<'py>(
+                &self,
+                py: ::pyo3::Python<'py>,
+                other: &::pyo3::Bound<'py, ::pyo3::PyAny>,
+            ) -> ::pyo3::PyResult<::pyo3::Bound<'py, ::pyo3::PyAny>> {
+                self.set_op(py, other, $crate::view::SetOp::SymmetricDifference)
             }
 
             fn __reduce__<'py>(

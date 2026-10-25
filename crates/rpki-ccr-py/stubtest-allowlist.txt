@@ -1,3 +1,6 @@
 # Implementation details that are deliberately absent from rpki_ccr.pyi.
 rpki_ccr.rpki_ccr
 rpki_ccr\.\w+\.__getnewargs_ex__
+# Reflected operators that pyo3 generates for every binary operator slot; they
+# only return NotImplemented and are not part of the API.
+rpki_ccr\.\w+\.__r(sub|and|or|xor)__

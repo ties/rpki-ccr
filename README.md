@@ -113,6 +113,11 @@ for change in diff.manifests().map_or(&[][..], |d| d.issuers()) {
 }
 ```
 
+The state types also offer plain set operations in canonical order
+(`difference`, `intersection`, `union`, `symmetric_difference`), and every
+diff type has `reversed()`. In Python these are the `-`, `&`, `|`, `^`
+operators on the views, `new - old` on `Ccr` and unary minus on diffs.
+
 VRPs, trust anchors and router keys are set differences (`added`, `removed`,
 `unchanged`). Manifests come in two views: by hash (`added`/`removed`) and
 grouped by issuer (`issuers()`, each `IssuerChange` being added, removed or

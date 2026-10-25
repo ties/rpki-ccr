@@ -5,17 +5,48 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use rpki_ccr::{AspaUpdate, CcrDiff, ChangeKind, IssuerChange};
+use rpki_ccr::{
+    Asn, AspaPayloadDiff, AspaUpdate, CcrDiff, ChangeKind, IssuerChange, KeyIdentifier,
+    ManifestDiff, RouterKey, SetDiff, Vrp,
+};
 
 use crate::aspa::PyAspaPayloadSet;
 use crate::manifest::PyManifestInstance;
 use crate::resources::PyVrp;
 use crate::router_key::PyRouterKey;
 
-/// The changes from one CCR to another, as returned by `Ccr.diff`.
+/// The changes from one CCR to another, as returned by `Ccr.diff` and `new - old`.
 #[pyclass(frozen, module = "rpki_ccr", name = "CcrDiff")]
 pub struct PyCcrDiff {
-    pub(crate) inner: Arc<CcrDiff>,
+    before_produced_at: DateTime<Utc>,
+    after_produced_at: DateTime<Utc>,
+    manifests: Option<Arc<ManifestDiff>>,
+    roa_payloads: Option<Arc<SetDiff<Vrp>>>,
+    aspa_payloads: Option<Arc<AspaPayloadDiff>>,
+    trust_anchors: Option<Arc<SetDiff<KeyIdentifier>>>,
+    router_keys: Option<Arc<SetDiff<(Asn, RouterKey)>>>,
+}
+
+impl PyCcrDiff {
+    pub(crate) fn from_diff(diff: &CcrDiff) -> Self {
+        PyCcrDiff {
+            before_produced_at: diff.before_produced_at(),
+            after_produced_at: diff.after_produced_at(),
+            manifests: diff.manifests().map(|d| Arc::new(d.clone())),
+            roa_payloads: diff.roa_payloads().map(|d| Arc::new(d.clone())),
+            aspa_payloads: diff.aspa_payloads().map(|d| Arc::new(d.clone())),
+            trust_anchors: diff.trust_anchors().map(|d| Arc::new(d.clone())),
+            router_keys: diff.router_keys().map(|d| Arc::new(d.clone())),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.manifests.as_ref().is_none_or(|d| d.is_empty())
+            && self.roa_payloads.as_ref().is_none_or(|d| d.is_empty())
+            && self.aspa_payloads.as_ref().is_none_or(|d| d.is_empty())
+            && self.trust_anchors.as_ref().is_none_or(|d| d.is_empty())
+            && self.router_keys.as_ref().is_none_or(|d| d.is_empty())
+    }
 }
 
 #[pymethods]
@@ -23,78 +54,92 @@ impl PyCcrDiff {
     /// `producedAt` of the older CCR.
     #[getter]
     fn before_produced_at(&self) -> DateTime<Utc> {
-        self.inner.before_produced_at()
+        self.before_produced_at
     }
 
     /// `producedAt` of the newer CCR.
     #[getter]
     fn after_produced_at(&self) -> DateTime<Utc> {
-        self.inner.after_produced_at()
+        self.after_produced_at
     }
 
     /// The manifest difference, unless both CCRs lack the aspect.
     #[getter]
     fn manifests(&self) -> Option<PyManifestDiff> {
-        self.inner.manifests().map(|_| PyManifestDiff {
-            inner: Arc::clone(&self.inner),
+        self.manifests.as_ref().map(|d| PyManifestDiff {
+            inner: Arc::clone(d),
         })
     }
 
     /// The VRP difference, unless both CCRs lack the aspect.
     #[getter]
     fn roa_payloads(&self) -> Option<PyRoaPayloadDiff> {
-        self.inner.roa_payloads().map(|_| PyRoaPayloadDiff {
-            inner: Arc::clone(&self.inner),
+        self.roa_payloads.as_ref().map(|d| PyRoaPayloadDiff {
+            inner: Arc::clone(d),
         })
     }
 
     /// The ASPA difference, unless both CCRs lack the aspect.
     #[getter]
     fn aspa_payloads(&self) -> Option<PyAspaPayloadDiff> {
-        self.inner.aspa_payloads().map(|_| PyAspaPayloadDiff {
-            inner: Arc::clone(&self.inner),
+        self.aspa_payloads.as_ref().map(|d| PyAspaPayloadDiff {
+            inner: Arc::clone(d),
         })
     }
 
     /// The trust anchor difference, unless both CCRs lack the aspect.
     #[getter]
     fn trust_anchors(&self) -> Option<PyTrustAnchorDiff> {
-        self.inner.trust_anchors().map(|_| PyTrustAnchorDiff {
-            inner: Arc::clone(&self.inner),
+        self.trust_anchors.as_ref().map(|d| PyTrustAnchorDiff {
+            inner: Arc::clone(d),
         })
     }
 
     /// The router key difference, unless both CCRs lack the aspect.
     #[getter]
     fn router_keys(&self) -> Option<PyRouterKeyDiff> {
-        self.inner.router_keys().map(|_| PyRouterKeyDiff {
-            inner: Arc::clone(&self.inner),
+        self.router_keys.as_ref().map(|d| PyRouterKeyDiff {
+            inner: Arc::clone(d),
         })
+    }
+
+    /// The same difference seen from the other direction.
+    fn reversed(&self) -> Self {
+        PyCcrDiff {
+            before_produced_at: self.after_produced_at,
+            after_produced_at: self.before_produced_at,
+            manifests: self.manifests.as_ref().map(|d| Arc::new(d.reversed())),
+            roa_payloads: self.roa_payloads.as_ref().map(|d| Arc::new(d.reversed())),
+            aspa_payloads: self.aspa_payloads.as_ref().map(|d| Arc::new(d.reversed())),
+            trust_anchors: self.trust_anchors.as_ref().map(|d| Arc::new(d.reversed())),
+            router_keys: self.router_keys.as_ref().map(|d| Arc::new(d.reversed())),
+        }
+    }
+
+    fn __neg__(&self) -> Self {
+        self.reversed()
     }
 
     /// True when any aspect changed.
     fn __bool__(&self) -> bool {
-        !self.inner.is_empty()
+        !self.is_empty()
     }
 
     fn __repr__(&self) -> String {
-        let count = |n: Option<(usize, usize)>| match n {
-            Some((added, removed)) => format!("+{added}/-{removed}"),
-            None => "None".to_string(),
-        };
+        fn count<T>(diff: &Option<Arc<SetDiff<T>>>) -> String {
+            match diff {
+                Some(d) => format!("+{}/-{}", d.added().len(), d.removed().len()),
+                None => "None".to_string(),
+            }
+        }
         format!(
             "CcrDiff(manifests={}, roa_payloads={}, aspa_payloads={}, trust_anchors={}, router_keys={})",
-            count(
-                self.inner
-                    .manifests()
-                    .map(|d| (d.added().len(), d.removed().len()))
-            ),
-            count(
-                self.inner
-                    .roa_payloads()
-                    .map(|d| (d.added().len(), d.removed().len()))
-            ),
-            match self.inner.aspa_payloads() {
+            match &self.manifests {
+                Some(d) => format!("+{}/-{}", d.added().len(), d.removed().len()),
+                None => "None".to_string(),
+            },
+            count(&self.roa_payloads),
+            match &self.aspa_payloads {
                 Some(d) => format!(
                     "+{}/-{}/~{}",
                     d.added().len(),
@@ -103,34 +148,22 @@ impl PyCcrDiff {
                 ),
                 None => "None".to_string(),
             },
-            count(
-                self.inner
-                    .trust_anchors()
-                    .map(|d| (d.added().len(), d.removed().len()))
-            ),
-            count(
-                self.inner
-                    .router_keys()
-                    .map(|d| (d.added().len(), d.removed().len()))
-            ),
+            count(&self.trust_anchors),
+            count(&self.router_keys),
         )
     }
 }
 
-/// Defines a set-difference class over one aspect of a `CcrDiff`.
+/// Defines a set-difference class over one element type.
 macro_rules! set_diff_class {
-    ($name:ident, $pyname:literal, $accessor:ident, $elem:ty, |$py:ident, $value:ident| $to_py:expr) => {
-        #[doc = concat!("Added and removed elements of the ", stringify!($accessor), " aspect.")]
+    ($name:ident, $pyname:literal, $elem:ty, |$py:ident, $value:ident| $to_py:expr) => {
+        #[doc = concat!("Added and removed elements (", $pyname, ").")]
         #[pyclass(frozen, module = "rpki_ccr", name = $pyname)]
         pub struct $name {
-            inner: Arc<CcrDiff>,
+            inner: Arc<SetDiff<$elem>>,
         }
 
         impl $name {
-            fn diff(&self) -> &rpki_ccr::SetDiff<$elem> {
-                self.inner.$accessor().expect("created only when present")
-            }
-
             fn convert<'py>(py: Python<'py>, items: &[$elem]) -> PyResult<Vec<Bound<'py, PyAny>>> {
                 items
                     .iter()
@@ -148,58 +181,63 @@ macro_rules! set_diff_class {
             /// Elements present in the newer CCR only, in canonical order.
             #[getter]
             fn added<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
-                Self::convert(py, self.diff().added())
+                Self::convert(py, self.inner.added())
             }
 
             /// Elements present in the older CCR only, in canonical order.
             #[getter]
             fn removed<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
-                Self::convert(py, self.diff().removed())
+                Self::convert(py, self.inner.removed())
             }
 
             /// The number of elements present in both.
             #[getter]
             fn unchanged(&self) -> usize {
-                self.diff().unchanged()
+                self.inner.unchanged()
+            }
+
+            /// The same difference seen from the other direction.
+            fn reversed(&self) -> Self {
+                $name {
+                    inner: Arc::new(self.inner.reversed()),
+                }
+            }
+
+            fn __neg__(&self) -> Self {
+                self.reversed()
             }
 
             /// True when something was added or removed.
             fn __bool__(&self) -> bool {
-                !self.diff().is_empty()
+                !self.inner.is_empty()
             }
 
             fn __repr__(&self) -> String {
                 format!(
                     "{}(added={}, removed={}, unchanged={})",
                     $pyname,
-                    self.diff().added().len(),
-                    self.diff().removed().len(),
-                    self.diff().unchanged()
+                    self.inner.added().len(),
+                    self.inner.removed().len(),
+                    self.inner.unchanged()
                 )
             }
         }
     };
 }
 
-set_diff_class!(
-    PyRoaPayloadDiff,
-    "RoaPayloadDiff",
-    roa_payloads,
-    rpki_ccr::Vrp,
-    |py, vrp| Ok(PyVrp(*vrp).into_pyobject(py)?.into_any())
-);
+set_diff_class!(PyRoaPayloadDiff, "RoaPayloadDiff", Vrp, |py, vrp| Ok(
+    PyVrp(*vrp).into_pyobject(py)?.into_any()
+));
 set_diff_class!(
     PyTrustAnchorDiff,
     "TrustAnchorDiff",
-    trust_anchors,
-    rpki_ccr::KeyIdentifier,
+    KeyIdentifier,
     |py, ski| Ok(PyBytes::new(py, ski.as_slice()).into_any())
 );
 set_diff_class!(
     PyRouterKeyDiff,
     "RouterKeyDiff",
-    router_keys,
-    (rpki_ccr::Asn, rpki_ccr::RouterKey),
+    (Asn, RouterKey),
     |py, entry| Ok(PyRouterKey {
         asn: entry.0,
         key: entry.1.clone()
@@ -253,6 +291,15 @@ impl PyIssuerChange {
             .collect()
     }
 
+    /// The same change seen from the other direction.
+    fn reversed(&self) -> Self {
+        PyIssuerChange(self.0.reversed())
+    }
+
+    fn __neg__(&self) -> Self {
+        self.reversed()
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "IssuerChange(aki='{}', kind='{}', before={}, after={})",
@@ -267,13 +314,7 @@ impl PyIssuerChange {
 /// The manifest difference: by hash and grouped by issuer.
 #[pyclass(frozen, module = "rpki_ccr", name = "ManifestDiff")]
 pub struct PyManifestDiff {
-    inner: Arc<CcrDiff>,
-}
-
-impl PyManifestDiff {
-    fn diff(&self) -> &rpki_ccr::ManifestDiff {
-        self.inner.manifests().expect("created only when present")
-    }
+    inner: Arc<ManifestDiff>,
 }
 
 #[pymethods]
@@ -281,7 +322,7 @@ impl PyManifestDiff {
     /// Manifest instances present in the newer CCR only (by hash).
     #[getter]
     fn added(&self) -> Vec<PyManifestInstance> {
-        self.diff()
+        self.inner
             .added()
             .iter()
             .cloned()
@@ -292,7 +333,7 @@ impl PyManifestDiff {
     /// Manifest instances present in the older CCR only (by hash).
     #[getter]
     fn removed(&self) -> Vec<PyManifestInstance> {
-        self.diff()
+        self.inner
             .removed()
             .iter()
             .cloned()
@@ -303,13 +344,13 @@ impl PyManifestDiff {
     /// The number of manifest instances present in both (by hash).
     #[getter]
     fn unchanged(&self) -> usize {
-        self.diff().unchanged()
+        self.inner.unchanged()
     }
 
     /// Issuers whose manifests changed, appeared or disappeared, ascending by AKI.
     #[getter]
     fn issuers(&self) -> Vec<PyIssuerChange> {
-        self.diff()
+        self.inner
             .issuers()
             .iter()
             .cloned()
@@ -320,22 +361,33 @@ impl PyManifestDiff {
     /// The number of issuers with exactly the same manifests in both.
     #[getter]
     fn unchanged_issuers(&self) -> usize {
-        self.diff().unchanged_issuers()
+        self.inner.unchanged_issuers()
+    }
+
+    /// The same difference seen from the other direction.
+    fn reversed(&self) -> Self {
+        PyManifestDiff {
+            inner: Arc::new(self.inner.reversed()),
+        }
+    }
+
+    fn __neg__(&self) -> Self {
+        self.reversed()
     }
 
     /// True when any manifest changed.
     fn __bool__(&self) -> bool {
-        !self.diff().is_empty()
+        !self.inner.is_empty()
     }
 
     fn __repr__(&self) -> String {
         format!(
             "ManifestDiff(added={}, removed={}, unchanged={}, issuers={}, unchanged_issuers={})",
-            self.diff().added().len(),
-            self.diff().removed().len(),
-            self.diff().unchanged(),
-            self.diff().issuers().len(),
-            self.diff().unchanged_issuers()
+            self.inner.added().len(),
+            self.inner.removed().len(),
+            self.inner.unchanged(),
+            self.inner.issuers().len(),
+            self.inner.unchanged_issuers()
         )
     }
 }
@@ -385,6 +437,15 @@ impl PyAspaUpdate {
             .collect()
     }
 
+    /// The same update seen from the other direction.
+    fn reversed(&self) -> Self {
+        PyAspaUpdate(self.0.reversed())
+    }
+
+    fn __neg__(&self) -> Self {
+        self.reversed()
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "AspaUpdate(customer_asn={}, providers_added={:?}, providers_removed={:?})",
@@ -398,15 +459,7 @@ impl PyAspaUpdate {
 /// The ASPA difference, keyed by customer AS.
 #[pyclass(frozen, module = "rpki_ccr", name = "AspaPayloadDiff")]
 pub struct PyAspaPayloadDiff {
-    inner: Arc<CcrDiff>,
-}
-
-impl PyAspaPayloadDiff {
-    fn diff(&self) -> &rpki_ccr::AspaPayloadDiff {
-        self.inner
-            .aspa_payloads()
-            .expect("created only when present")
-    }
+    inner: Arc<AspaPayloadDiff>,
 }
 
 #[pymethods]
@@ -414,7 +467,7 @@ impl PyAspaPayloadDiff {
     /// Customers present in the newer CCR only.
     #[getter]
     fn added(&self) -> Vec<PyAspaPayloadSet> {
-        self.diff()
+        self.inner
             .added()
             .iter()
             .cloned()
@@ -425,7 +478,7 @@ impl PyAspaPayloadDiff {
     /// Customers present in the older CCR only.
     #[getter]
     fn removed(&self) -> Vec<PyAspaPayloadSet> {
-        self.diff()
+        self.inner
             .removed()
             .iter()
             .cloned()
@@ -436,7 +489,7 @@ impl PyAspaPayloadDiff {
     /// Customers present in both with different providers.
     #[getter]
     fn updated(&self) -> Vec<PyAspaUpdate> {
-        self.diff()
+        self.inner
             .updated()
             .iter()
             .cloned()
@@ -447,21 +500,32 @@ impl PyAspaPayloadDiff {
     /// The number of customers with identical providers in both.
     #[getter]
     fn unchanged(&self) -> usize {
-        self.diff().unchanged()
+        self.inner.unchanged()
+    }
+
+    /// The same difference seen from the other direction.
+    fn reversed(&self) -> Self {
+        PyAspaPayloadDiff {
+            inner: Arc::new(self.inner.reversed()),
+        }
+    }
+
+    fn __neg__(&self) -> Self {
+        self.reversed()
     }
 
     /// True when any customer changed.
     fn __bool__(&self) -> bool {
-        !self.diff().is_empty()
+        !self.inner.is_empty()
     }
 
     fn __repr__(&self) -> String {
         format!(
             "AspaPayloadDiff(added={}, removed={}, updated={}, unchanged={})",
-            self.diff().added().len(),
-            self.diff().removed().len(),
-            self.diff().updated().len(),
-            self.diff().unchanged()
+            self.inner.added().len(),
+            self.inner.removed().len(),
+            self.inner.updated().len(),
+            self.inner.unchanged()
         )
     }
 }

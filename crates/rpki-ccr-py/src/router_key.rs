@@ -244,6 +244,7 @@ sequence_view!(
     iter: RouterKeyStateIter,
     attr: "router_keys",
     elem: (Asn, RouterKey),
+    state: |inner| state_of(inner),
     len: |inner| inner.ccr.router_keys().map_or(0, |_| index_of(inner).total),
     get: |inner, index| index_of(inner).get(state_of(inner), index),
     to_py: |py, value| Ok(PyRouterKey { asn: value.0, key: value.1 }.into_pyobject(py)?.into_any()),

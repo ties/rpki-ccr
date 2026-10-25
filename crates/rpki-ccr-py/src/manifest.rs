@@ -247,6 +247,7 @@ sequence_view!(
     iter: ManifestStateIter,
     attr: "manifests",
     elem: ManifestInstance,
+    state: |inner| inner.ccr.manifests().expect("present"),
     len: |inner| inner.ccr.manifests().map_or(0, ManifestState::len),
     get: |inner, index| inner.ccr.manifests().expect("present").instances()[index].clone(),
     to_py: |py, value| Ok(PyManifestInstance(value).into_pyobject(py)?.into_any()),

@@ -115,6 +115,7 @@ sequence_view!(
     iter: AspaPayloadStateIter,
     attr: "aspa_payloads",
     elem: AspaPayloadSet,
+    state: |inner| inner.ccr.aspa_payloads().expect("present"),
     len: |inner| inner.ccr.aspa_payloads().map_or(0, AspaPayloadState::len),
     get: |inner, index| inner.ccr.aspa_payloads().expect("present").sets()[index].clone(),
     to_py: |py, value| Ok(PyAspaPayloadSet(value).into_pyobject(py)?.into_any()),

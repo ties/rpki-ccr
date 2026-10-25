@@ -82,6 +82,21 @@ if diff:                                     # anything changed?
         print(update.customer_asn, update.providers_added, update.providers_removed)
 ```
 
+Operators cover the common cases. `new - old` is `old.diff(new)`, and unary
+minus reverses a diff. The views support set algebra returning lists in
+canonical order:
+
+```python
+added = new.roa_payloads - old.roa_payloads      # VRPs only the newer file has
+removed = old.roa_payloads - new.roa_payloads
+common = new.roa_payloads & old.roa_payloads     # also | (union) and ^ (symmetric difference)
+report = new - old
+assert report.roa_payloads.added == added and (-report).roa_payloads.added == removed
+```
+
+Manifest instances are identified by hash, trust anchors by key identifier,
+router keys by AS and key identifier, ASPA sets by customer and providers.
+
 The diff is a linear merge in Rust over the canonical sequences (aspects
 with equal digests are skipped), so comparing two full-RPKI files costs
 milliseconds. Manifests are reported both by hash (`added`/`removed`) and
