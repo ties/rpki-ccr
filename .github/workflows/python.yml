@@ -30,7 +30,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: uv sync
       - run: uv run pytest -q
-      - run: uv run python -m mypy.stubtest rpki_ccr --allowlist stubtest-allowlist.txt
+      # Python 3.9 resolves mypy 1.x, whose stubtest disagrees with mypy 2 about
+      # which dunders the allowlist needs; check the stub with mypy 2 only.
+      - if: matrix.python-version != '3.9'
+        run: uv run python -m mypy.stubtest rpki_ccr --allowlist stubtest-allowlist.txt
 
   linux:
     runs-on: ${{ matrix.platform.runner }}
