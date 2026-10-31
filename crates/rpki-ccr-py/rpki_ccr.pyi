@@ -207,7 +207,7 @@ class ManifestInstance:
         """The SHA-256 digest of the manifest object."""
     @property
     def size(self) -> int:
-        """The size of the manifest object in octets (at least 1000)."""
+        """The size of the manifest object in octets."""
     @property
     def aki(self) -> bytes:
         """The 20-byte key identifier of the manifest issuer."""

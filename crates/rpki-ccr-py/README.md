@@ -119,3 +119,7 @@ uv run python -m mypy.stubtest rpki_ccr --allowlist stubtest-allowlist.txt  # ke
 ```
 
 Wheels are built for the stable ABI (`abi3`, Python 3.9+).
+
+## License
+
+BSD 3-Clause, see [LICENSE](LICENSE).

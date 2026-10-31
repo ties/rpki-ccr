@@ -390,18 +390,18 @@ fn constructors_reject_invalid_input() {
         |r: Result<(), Error>| assert!(matches!(r, Err(Error::InvalidValue { .. })), "{r:?}");
 
     invalid(Ccr::builder(t(0, 0, 10)).build().map(drop));
-    invalid(
-        ManifestInstance::new(
-            Digest::sha256(b""),
-            999,
-            ki(TA1),
-            1u64.into(),
-            t(0, 0, 0),
-            vec![sia("rsync://a")],
-            vec![],
-        )
-        .map(drop),
-    );
+    // The size lower bound of draft -11 (1000) is not enforced; it will be relaxed.
+    let small = ManifestInstance::new(
+        Digest::sha256(b""),
+        1,
+        ki(TA1),
+        1u64.into(),
+        t(0, 0, 0),
+        vec![sia("rsync://a")],
+        vec![],
+    )
+    .unwrap();
+    assert_eq!(small.size(), 1);
     invalid(
         ManifestInstance::new(
             Digest::sha256(b""),

@@ -3,6 +3,7 @@ name = "rpki-ccr"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 description = "Parser for RPKI Canonical Cache Representation (CCR) files"
 keywords = ["rpki", "ccr", "asn1", "der"]
 categories = ["parser-implementations", "network-programming"]

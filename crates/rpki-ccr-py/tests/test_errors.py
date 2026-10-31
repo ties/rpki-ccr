@@ -74,8 +74,8 @@ def test_invalid_values() -> None:
         ManifestInstance(hash=bytes(32), size=1000, aki=bytes(19), manifest_number=1, this_update=T, locations=["rsync://a"])
     with pytest.raises(rpki_ccr.InvalidValueError, match="hash must be 32 bytes"):
         ManifestInstance(hash=bytes(31), size=1000, aki=bytes(20), manifest_number=1, this_update=T, locations=["rsync://a"])
-    with pytest.raises(rpki_ccr.InvalidValueError, match="1000"):
-        ManifestInstance(hash=bytes(32), size=999, aki=bytes(20), manifest_number=1, this_update=T, locations=["rsync://a"])
+    # The draft's lower bound on size (1000 in -11) is not enforced; it will be relaxed.
+    assert ManifestInstance(hash=bytes(32), size=1, aki=bytes(20), manifest_number=1, this_update=T, locations=["rsync://a"]).size == 1
     with pytest.raises(rpki_ccr.InvalidValueError, match="location"):
         ManifestInstance(hash=bytes(32), size=1000, aki=bytes(20), manifest_number=1, this_update=T, locations=[])
     with pytest.raises(rpki_ccr.InvalidValueError, match="maximum is 20"):

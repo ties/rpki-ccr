@@ -593,10 +593,9 @@ fn manifest_rules() {
     let bad = |data: Vec<u8>, needle: &str| {
         assert_der_err(&ccr(T0, &[mft_state(&[data], T0, None)]), needle)
     };
-    bad(
-        mft_instance(&digest(1), 999, &ski(9), &[1], T0, &["rsync://a"], None),
-        "1000",
-    );
+    // size INTEGER (1000..MAX) in draft -11 is not enforced: the bound will be relaxed.
+    let small = mft_instance(&digest(1), 1, &ski(9), &[1], T0, &["rsync://a"], None);
+    assert!(Ccr::decode(&ccr(T0, &[mft_state(&[small], T0, None)])).is_ok());
     bad(
         mft_instance(
             &digest(1),

@@ -100,6 +100,10 @@ impl ManifestInstance {
     }
 
     /// The size of the DER-encoded manifest object in octets.
+    ///
+    /// Draft -11 declares `size INTEGER (1000..MAX)`, but that lower bound
+    /// is not enforced on decoding or construction: it proved too high for
+    /// real manifests and will be relaxed in the next revision.
     pub fn size(&self) -> u64 {
         self.size
     }
@@ -137,11 +141,10 @@ impl ManifestInstance {
     ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
             let hash = Digest::take_from(cons)?;
+            // size INTEGER (1000..MAX) in draft -11 (section 3, ASN.1 module). The
+            // lower bound turned out to be too high for real manifests and will
+            // be relaxed in the next revision, so it is deliberately not enforced.
             let size = cons.take_u64()?;
-            // size INTEGER (1000..MAX) (draft section 3, ASN.1 module).
-            if size < 1000 {
-                return Err(cons.content_err("manifest size must be at least 1000 octets"));
-            }
             let aki = KeyIdentifier::take_from(cons)?;
             // manifestNumber INTEGER (0..MAX) of at most 20 octets (draft sections 3 and 6).
             let manifest_number = ManifestNumber::take_from(cons)?;
@@ -244,7 +247,8 @@ impl ManifestInstance {
     /// instances keep their encoded order so that re-encoding is exact.
     ///
     /// Subordinates are ordered as unsigned 160-bit integers and unique
-    /// (draft section 3.4.1.1); `size` must be at least 1000 (section 3).
+    /// (draft section 3.4.1.1). The lower bound on `size` in draft -11 is
+    /// not enforced; see [`ManifestInstance::size`].
     pub fn new(
         hash: Digest,
         size: u64,
@@ -254,12 +258,6 @@ impl ManifestInstance {
         locations: Vec<AccessDescription>,
         subordinates: Vec<KeyIdentifier>,
     ) -> Result<Self, Error> {
-        // size INTEGER (1000..MAX) (draft section 3, ASN.1 module).
-        if size < 1000 {
-            return Err(Error::invalid(format!(
-                "manifest size {size} is below the minimum of 1000 octets"
-            )));
-        }
         // locations SEQUENCE (SIZE(1..MAX)) OF AccessDescription (draft section 3):
         // the SIA of the manifest's EE certificate (section 3.4.1.1).
         if locations.is_empty() {

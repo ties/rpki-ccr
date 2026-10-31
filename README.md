@@ -38,7 +38,7 @@ first violation:
 
 * structure and bounds: CMS content type, absent `version`, SHA-256 without
   parameters, 15-octet `GeneralizedTime`, 20-octet key identifiers, 32-octet
-  digests, `size >= 1000`, manifest numbers of at most 20 octets, valid address
+  digests, manifest numbers of at most 20 octets, valid address
   families, prefix and `maxLength` bounds, non-empty sequences where required,
   at least one state aspect;
 * digests: each state aspect's hash is recomputed over its DER payload;
@@ -183,3 +183,7 @@ RPKI_CCR_WRITE_FIXTURES=1 cargo test --test encode                              
 ```
 
 The minimum supported Rust version is 1.85 (edition 2024).
+
+## License
+
+BSD 3-Clause, see [LICENSE](LICENSE).

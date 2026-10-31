@@ -7,6 +7,7 @@ name = "rpki-ccr"
 description = "Parser and encoder for RPKI Canonical Cache Representation (CCR) files"
 readme = "README.md"
 requires-python = ">=3.9"
+license = "BSD-3-Clause"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
