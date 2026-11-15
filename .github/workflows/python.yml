@@ -115,20 +115,36 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     needs: [test, linux, macos, sdist]
+    # PyPI trusted publishing: the pending publisher on pypi.org names this
+    # workflow and environment.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/rpki-ccr
     permissions:
+      contents: read
       id-token: write
-      contents: write
       attestations: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches the crate version
+        working-directory: .
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['workspace']['package']['version'])")
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: "wheels-*/*"
+          subject-path: "dist/*"
       - name: Publish to PyPI
-        uses: PyO3/maturin-action@v1
-        env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          command: upload
-          args: --non-interactive --skip-existing wheels-*/*
+          packages-dir: dist
+          skip-existing: true
