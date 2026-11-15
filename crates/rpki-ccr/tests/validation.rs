@@ -201,6 +201,22 @@ fn aspa_rules() {
         )
         .is_ok()
     );
+    // The customer AS must not be one of its own providers.
+    let customer_as_provider = ccr(T0, &[aspa_state(&[aspa_set(64511, &[64496, 64511])], None)]);
+    assert!(matches!(
+        strict_err(&customer_as_provider),
+        Error::Consistency {
+            aspect: Aspect::AspaPayloads,
+            ..
+        }
+    ));
+    assert!(
+        Ccr::decode_with(
+            &customer_as_provider,
+            &ValidationOptions::strict().check_consistency(false)
+        )
+        .is_ok()
+    );
     assert_der_err(
         &ccr(T0, &[aspa_state(&[aspa_set(64511, &[])], None)]),
         "at least one AS",
@@ -353,6 +369,32 @@ fn roa_rules() {
             ..
         }
     ));
+    // maxLength equal to the prefix length must not be encoded, even when
+    // the bare prefix is not present.
+    let redundant_max_length = ccr(
+        T0,
+        &[roa_state(
+            &[roa_set(
+                0,
+                &[v4(vec![roa_address(0, &[192, 0, 2], Some(24)), b.clone()])],
+            )],
+            None,
+        )],
+    );
+    assert!(matches!(
+        strict_err(&redundant_max_length),
+        Error::Consistency {
+            aspect: Aspect::RoaPayloads,
+            ..
+        }
+    ));
+    assert!(
+        Ccr::decode_with(
+            &redundant_max_length,
+            &ValidationOptions::strict().check_consistency(false)
+        )
+        .is_ok()
+    );
 
     assert_der_err(
         &ccr(
@@ -593,9 +635,24 @@ fn manifest_rules() {
     let bad = |data: Vec<u8>, needle: &str| {
         assert_der_err(&ccr(T0, &[mft_state(&[data], T0, None)]), needle)
     };
-    // size INTEGER (1000..MAX) in draft -11 is not enforced: the bound will be relaxed.
+    // size INTEGER (0..MAX): the lower bound of 1000 in draft -11 was dropped
+    // afterwards and is not enforced.
     let small = mft_instance(&digest(1), 1, &ski(9), &[1], T0, &["rsync://a"], None);
     assert!(Ccr::decode(&ccr(T0, &[mft_state(&[small], T0, None)])).is_ok());
+    let zero = mft_instance(&digest(1), 0, &ski(9), &[1], T0, &["rsync://a"], None);
+    assert!(Ccr::decode(&ccr(T0, &[mft_state(&[zero], T0, None)])).is_ok());
+    // A negative size is not.
+    bad(
+        seq(&[
+            oct(&digest(1)),
+            int_raw(&[0x80]),
+            oct(&ski(9)),
+            int_raw(&[1]),
+            gentime(T0),
+            seq(&[access_description("rsync://a")]),
+        ]),
+        "integer",
+    );
     bad(
         mft_instance(
             &digest(1),
@@ -916,6 +973,30 @@ fn encoding_validates_by_default() {
     assert_eq!(
         decoded.to_der_with(&lenient).unwrap().as_ref(),
         unsorted.as_slice()
+    );
+
+    // A redundant maxLength is kept as encoded, so a lenient round trip is exact.
+    let redundant = ccr(
+        T0,
+        &[roa_state(
+            &[roa_set(
+                0,
+                &[roa_family(1, &[roa_address(0, &[192, 0, 2], Some(24))])],
+            )],
+            None,
+        )],
+    );
+    let decoded = Ccr::decode_with(&redundant, &lenient).unwrap();
+    assert!(matches!(
+        decoded.to_der(),
+        Err(Error::Consistency {
+            aspect: Aspect::RoaPayloads,
+            ..
+        })
+    ));
+    assert_eq!(
+        decoded.to_der_with(&lenient).unwrap().as_ref(),
+        redundant.as_slice()
     );
 
     // A validly decoded or built object passes and re-encodes unchanged.

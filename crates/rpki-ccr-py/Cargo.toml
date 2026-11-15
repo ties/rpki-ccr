@@ -18,7 +18,7 @@ doctest = false
 bench = false
 
 [dependencies]
-rpki-ccr = { path = "../rpki-ccr", version = "0.1.0" }
+rpki-ccr = { path = "../rpki-ccr", version = "0.2.0" }
 pyo3.workspace = true
 chrono.workspace = true
 bytes.workspace = true

@@ -50,8 +50,9 @@ first violation:
   address families and ROA addresses in RFC 9582 canonical order, ASPA
   customers and providers ascending, router keys by SKI;
 * consistency: `mostRecentUpdate` equals the newest manifest `thisUpdate` (or
-  the POSIX epoch), does not exceed `producedAt`, and AS 0 appears only as a
-  sole provider.
+  the POSIX epoch) and does not exceed `producedAt`, `maxLength` is omitted
+  when it equals the prefix length, a customer AS is not one of its own
+  providers, and AS 0 appears only as a sole provider.
 
 Structural and bounds violations are always errors. The semantic groups can be
 relaxed to inspect non-conforming files:

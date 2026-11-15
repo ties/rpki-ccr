@@ -147,8 +147,9 @@ impl AspaPayloadState {
 }
 
 impl AspaPayloadSet {
-    /// Creates a payload set with sorted, deduplicated providers. AS 0 is
-    /// only allowed as the sole provider (draft section 3.4.3).
+    /// Creates a payload set with sorted, deduplicated providers. The
+    /// customer AS must not be one of its own providers, and AS 0 is only
+    /// allowed as the sole provider (draft section 3.4.3).
     pub fn new(customer_as_id: Asn, providers: Vec<Asn>) -> Result<Self, Error> {
         // providers SEQUENCE (SIZE(1..MAX)) OF PAS (draft section 3).
         if providers.is_empty() {
@@ -157,6 +158,13 @@ impl AspaPayloadSet {
             )));
         }
         let providers = sort_dedup_by_key(providers, |provider| *provider);
+        // The customer AS MUST NOT appear in providers (draft section 3.4.3;
+        // added after -11 in job/draft-sidrops-rpki-ccr commit 05182f0).
+        if providers.binary_search(&customer_as_id).is_ok() {
+            return Err(Error::invalid(format!(
+                "customer AS {customer_as_id} appears in its own provider list"
+            )));
+        }
         if providers.len() > 1 && providers[0] == Asn::new(0) {
             return Err(Error::invalid(format!(
                 "customer AS {customer_as_id} lists AS 0 together with other providers"

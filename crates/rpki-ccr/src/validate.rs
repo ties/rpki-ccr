@@ -139,7 +139,8 @@ fn check_sorted<T, K: Ord>(
 
 fn check_ordering(ccr: &Ccr) -> Result<(), Error> {
     if let Some(state) = ccr.manifests() {
-        // mis ascending by hash, unique (draft section 3.4.1.1).
+        // mis ascending by hash as an unsigned integer, unique (draft section
+        // 3.4.1.1).
         check_sorted(
             state.instances(),
             |i| *i.hash(),
@@ -271,8 +272,40 @@ fn check_consistency(ccr: &Ccr) -> Result<(), Error> {
             });
         }
     }
+    if let Some(state) = ccr.roa_payloads() {
+        for set in state.sets() {
+            for family in set.ip_addr_blocks() {
+                for address in family.addresses() {
+                    // maxLength MUST NOT be encoded when it equals the prefix length
+                    // (draft section 3.4.2; added after -11 in
+                    // job/draft-sidrops-rpki-ccr commit 92972a8).
+                    if address.max_length() == Some(address.prefix().length()) {
+                        return Err(Error::Consistency {
+                            aspect: Aspect::RoaPayloads,
+                            detail: format!(
+                                "AS {}: maxLength of {} equals the prefix length and must be omitted",
+                                set.as_id(),
+                                address.prefix()
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
     if let Some(state) = ccr.aspa_payloads() {
         for set in state.sets() {
+            // The customer AS MUST NOT appear in providers (draft section 3.4.3;
+            // added after -11 in job/draft-sidrops-rpki-ccr commit 05182f0).
+            if set.providers().contains(&set.customer_as_id()) {
+                return Err(Error::Consistency {
+                    aspect: Aspect::AspaPayloads,
+                    detail: format!(
+                        "customer AS {} appears in its own provider list",
+                        set.customer_as_id()
+                    ),
+                });
+            }
             // AS 0 only as a single-item provider list (draft section 3.4.3).
             if set.providers().len() > 1 && set.providers().contains(&Asn::new(0)) {
                 return Err(Error::Consistency {

@@ -228,7 +228,7 @@ class ManifestInstance:
 
 @final
 class AspaPayloadSet:
-    """The provider set of one customer AS (sorted, deduplicated; AS 0 only alone)."""
+    """The provider set of one customer AS (sorted, deduplicated; never the customer itself; AS 0 only alone)."""
 
     def __new__(cls, customer_asn: int, providers: Iterable[int]) -> AspaPayloadSet: ...
     @property
