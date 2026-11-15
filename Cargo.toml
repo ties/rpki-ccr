@@ -8,6 +8,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "BSD-3-Clause"
+repository = "https://github.com/ties/rpki-ccr"
 
 [workspace.dependencies]
 bcder = "0.7.7"
