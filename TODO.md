@@ -8,11 +8,18 @@
   than picking up compiler fixes, and keep `rust-version = "1.85"` as the MSRV
   check regardless.
 
-- Re-check the `size` constraint of `ManifestInstance` once the next draft
-  revision is out. Draft -11 says `INTEGER (1000..MAX)`; the lower bound is
-  not enforced because 1000 turned out to be too high and will be changed.
+- Re-check the crate against the published RFC. Three rules implemented here
+  come from the draft's editor repository
+  (https://github.com/job/draft-sidrops-rpki-ccr) after -11 and are not in a
+  published revision yet: `size INTEGER (0..MAX)` (commits ebf45bf, e11cca3),
+  no `maxLength` equal to the prefix length (92972a8) and no customer AS in
+  its own `providers` (05182f0).
 
 Completed:
+
+- `ManifestInstance.size`: draft -11 says `INTEGER (1000..MAX)`, which turned
+  out to be too high. The editor's copy now says `INTEGER (0..MAX)`, which is
+  what the decoder and constructors enforce.
 
 - Checked how the manifest hashes are determined, in the draft and in
   rpki-client's encoder (`openbsd/usr.sbin/rpki-client`): `ManifestInstance.hash`

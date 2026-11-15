@@ -400,7 +400,8 @@ impl Prefix {
 
 impl RoaIpAddress {
     /// Returns the canonical form: `maxLength` omitted when it equals the
-    /// prefix length (RFC 9582 section 4.3.2.2).
+    /// prefix length (SHOULD NOT be encoded in RFC 9582 section 4.3.2.2,
+    /// MUST NOT in draft section 3.4.2 after -11).
     pub fn canonical(self) -> Self {
         RoaIpAddress {
             prefix: self.prefix,

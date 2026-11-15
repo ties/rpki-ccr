@@ -390,7 +390,7 @@ fn constructors_reject_invalid_input() {
         |r: Result<(), Error>| assert!(matches!(r, Err(Error::InvalidValue { .. })), "{r:?}");
 
     invalid(Ccr::builder(t(0, 0, 10)).build().map(drop));
-    // The size lower bound of draft -11 (1000) is not enforced; it will be relaxed.
+    // The size lower bound of draft -11 (1000) was dropped afterwards and is not enforced.
     let small = ManifestInstance::new(
         Digest::sha256(b""),
         1,
@@ -450,6 +450,7 @@ fn constructors_reject_invalid_input() {
     invalid(AccessDescription::signed_object("rsync://exämple.net/a.mft").map(drop));
     invalid(AspaPayloadSet::new(Asn::new(1), vec![]).map(drop));
     invalid(AspaPayloadSet::new(Asn::new(1), vec![Asn::new(0), Asn::new(2)]).map(drop));
+    invalid(AspaPayloadSet::new(Asn::new(1), vec![Asn::new(1), Asn::new(2)]).map(drop));
     invalid(
         AspaPayloadState::new(vec![
             AspaPayloadSet::new(Asn::new(1), vec![Asn::new(0)]).unwrap(),

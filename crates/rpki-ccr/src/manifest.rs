@@ -102,8 +102,10 @@ impl ManifestInstance {
     /// The size of the DER-encoded manifest object in octets.
     ///
     /// Draft -11 declares `size INTEGER (1000..MAX)`, but that lower bound
-    /// is not enforced on decoding or construction: it proved too high for
-    /// real manifests and will be relaxed in the next revision.
+    /// proved too high for real manifests and is not enforced on decoding
+    /// or construction. The draft's ASN.1 module has since been changed to
+    /// `size INTEGER (0..MAX)` (job/draft-sidrops-rpki-ccr commits ebf45bf
+    /// and e11cca3).
     pub fn size(&self) -> u64 {
         self.size
     }
@@ -141,9 +143,11 @@ impl ManifestInstance {
     ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_sequence(|cons| {
             let hash = Digest::take_from(cons)?;
-            // size INTEGER (1000..MAX) in draft -11 (section 3, ASN.1 module). The
-            // lower bound turned out to be too high for real manifests and will
-            // be relaxed in the next revision, so it is deliberately not enforced.
+            // size INTEGER (0..MAX) (draft section 3, ASN.1 module, as changed after
+            // -11 in job/draft-sidrops-rpki-ccr commits ebf45bf and e11cca3). Draft
+            // -11 still says (1000..MAX); that lower bound turned out to be too
+            // high for real manifests and is not enforced. take_u64 rejects
+            // negative values.
             let size = cons.take_u64()?;
             let aki = KeyIdentifier::take_from(cons)?;
             // manifestNumber INTEGER (0..MAX) of at most 20 octets (draft sections 3 and 6).
@@ -247,8 +251,8 @@ impl ManifestInstance {
     /// instances keep their encoded order so that re-encoding is exact.
     ///
     /// Subordinates are ordered as unsigned 160-bit integers and unique
-    /// (draft section 3.4.1.1). The lower bound on `size` in draft -11 is
-    /// not enforced; see [`ManifestInstance::size`].
+    /// (draft section 3.4.1.1). `size` has no lower bound; see
+    /// [`ManifestInstance::size`].
     pub fn new(
         hash: Digest,
         size: u64,

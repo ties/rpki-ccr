@@ -25,7 +25,9 @@ pub struct ValidationOptions {
     /// Verify that every sequence is sorted as required and free of duplicates.
     pub check_ordering: bool,
     /// Verify cross-field rules: `mostRecentUpdate` versus the manifest
-    /// `thisUpdate` values and `producedAt`, and the AS 0 provider rule.
+    /// `thisUpdate` values and `producedAt`, no `maxLength` equal to the
+    /// prefix length, no customer AS among its own providers, and the AS 0
+    /// provider rule.
     pub check_consistency: bool,
 }
 

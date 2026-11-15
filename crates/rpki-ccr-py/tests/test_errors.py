@@ -74,7 +74,7 @@ def test_invalid_values() -> None:
         ManifestInstance(hash=bytes(32), size=1000, aki=bytes(19), manifest_number=1, this_update=T, locations=["rsync://a"])
     with pytest.raises(rpki_ccr.InvalidValueError, match="hash must be 32 bytes"):
         ManifestInstance(hash=bytes(31), size=1000, aki=bytes(20), manifest_number=1, this_update=T, locations=["rsync://a"])
-    # The draft's lower bound on size (1000 in -11) is not enforced; it will be relaxed.
+    # The draft's lower bound on size (1000 in -11) was dropped afterwards and is not enforced.
     assert ManifestInstance(hash=bytes(32), size=1, aki=bytes(20), manifest_number=1, this_update=T, locations=["rsync://a"]).size == 1
     with pytest.raises(rpki_ccr.InvalidValueError, match="location"):
         ManifestInstance(hash=bytes(32), size=1000, aki=bytes(20), manifest_number=1, this_update=T, locations=[])
@@ -94,6 +94,8 @@ def test_invalid_values() -> None:
         AspaPayloadSet(1, [])
     with pytest.raises(rpki_ccr.InvalidValueError, match="AS 0"):
         AspaPayloadSet(1, [0, 2])
+    with pytest.raises(rpki_ccr.InvalidValueError, match="own provider list"):
+        AspaPayloadSet(1, [1, 2])
     with pytest.raises(rpki_ccr.InvalidValueError, match="at least one state aspect"):
         Ccr(T)
     with pytest.raises(rpki_ccr.InvalidValueError, match="fractional"):
