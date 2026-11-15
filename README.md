@@ -1,5 +1,8 @@
 # rpki-ccr
 
+[![CI](https://github.com/ties/rpki-ccr/actions/workflows/ci.yml/badge.svg)](https://github.com/ties/rpki-ccr/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/rpki-ccr)](https://pypi.org/project/rpki-ccr/)
+
 A Rust library for reading RPKI Canonical Cache Representation (CCR) files, as
 specified in [draft-ietf-sidrops-rpki-ccr](https://datatracker.ietf.org/doc/draft-ietf-sidrops-rpki-ccr/).
 

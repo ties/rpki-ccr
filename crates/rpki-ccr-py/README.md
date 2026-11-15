@@ -1,5 +1,8 @@
 # rpki-ccr
 
+[![PyPI](https://img.shields.io/pypi/v/rpki-ccr)](https://pypi.org/project/rpki-ccr/)
+[![Python](https://github.com/ties/rpki-ccr/actions/workflows/python.yml/badge.svg)](https://github.com/ties/rpki-ccr/actions/workflows/python.yml)
+
 Python bindings for [rpki-ccr](https://github.com/ties/rpki-ccr), a parser and
 encoder for RPKI Canonical Cache Representation (CCR) files
 ([draft-ietf-sidrops-rpki-ccr](https://datatracker.ietf.org/doc/draft-ietf-sidrops-rpki-ccr/)).
