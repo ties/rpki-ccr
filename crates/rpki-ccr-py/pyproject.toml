@@ -24,6 +24,7 @@ dynamic = ["version"]
 [project.urls]
 Repository = "https://github.com/ties/rpki-ccr"
 Issues = "https://github.com/ties/rpki-ccr/issues"
+Changelog = "https://github.com/ties/rpki-ccr/blob/main/CHANGELOG.md"
 
 [tool.maturin]
 module-name = "rpki_ccr"
